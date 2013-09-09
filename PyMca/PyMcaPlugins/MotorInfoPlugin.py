@@ -11,8 +11,7 @@ except ImportError:
     print("MotorInfoPlugin importing from somewhere else")
     import MotorInfoWindow
     
-DEBUG = 1
-
+DEBUG = 0
 class MotorInfo(Plugin1DBase.Plugin1DBase):
     def __init__(self,  plotWindow,  **kw):
         Plugin1DBase.Plugin1DBase.__init__(self,  plotWindow,  **kw)
@@ -50,10 +49,8 @@ class MotorInfo(Plugin1DBase.Plugin1DBase):
             self.motorValuesList = self._convertInfoDictionary( infoList )
         else:
             raise ValueError("No Curve(s) present.")
-        if self.widget is None:
-            self._createWidget()
-#        ret = self.widget.exec_()
-        ret = self.widget.show()
+        self._createWidget()
+        ret = self.widget.show() # non-modal QDialog
 
     def _convertInfoDictionary(self,  infosList):
         ret = []
@@ -90,7 +87,6 @@ class MotorInfo(Plugin1DBase.Plugin1DBase):
 
 MENU_TEXT = "Motor Info"
 def getPlugin1DInstance(plotWindow,  **kw):
-    print("Creating MotorInfo..")
     ob = MotorInfo(plotWindow)
     return ob
 
