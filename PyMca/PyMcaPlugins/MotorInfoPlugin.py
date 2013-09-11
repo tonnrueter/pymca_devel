@@ -1,4 +1,4 @@
-import numpy
+import numpy,  weakref
 
 try:
     from PyMca import Plugin1DBase
@@ -39,18 +39,23 @@ class MotorInfo(Plugin1DBase.Plugin1DBase):
         return
 
     def showMotorInfo(self):
+        self._setLists()
+        if self.widget is None:
+            self._createWidget()
+        else:
+            self._setLists()
+            self.widget.table.updateTable(self.legendsList,  self.motorValuesList)
+        self.widget.show()
+        self.widget.raise_()
+        
+    def _setLists(self):
         curves = self.getAllCurves()
         nCurves = len(curves)
         if DEBUG:
             print ("Received %d curve(s).." % nCurves)
-        if nCurves:
-            self.legendsList = [leg for (xvals, yvals,  leg,  info) in curves] 
-            infoList = [info for (xvals, yvals,  leg,  info) in curves] 
-            self.motorValuesList = self._convertInfoDictionary( infoList )
-        else:
-            raise ValueError("No Curve(s) present.")
-        self._createWidget()
-        ret = self.widget.show() # non-modal QDialog
+        self.legendsList = [leg for (xvals, yvals,  leg,  info) in curves] 
+        infoList = [info for (xvals, yvals,  leg,  info) in curves] 
+        self.motorValuesList = self._convertInfoDictionary( infoList )
 
     def _convertInfoDictionary(self,  infosList):
         ret = []
@@ -83,7 +88,10 @@ class MotorInfo(Plugin1DBase.Plugin1DBase):
     
     def _createWidget(self):
         parent = None
-        self.widget = MotorInfoWindow.MotorInfoWidget(parent,  self.legendsList,  self.motorValuesList)
+        self.widget = MotorInfoWindow.MotorInfoDialog(parent,  
+                                                                                  list(self.legendsList),  
+                                                                                  list(self.motorValuesList)) 
+        self.widget.buttonUpdate.clicked.connect(self.showMotorInfo)
 
 MENU_TEXT = "Motor Info"
 def getPlugin1DInstance(plotWindow,  **kw):
