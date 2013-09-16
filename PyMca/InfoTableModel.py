@@ -31,26 +31,20 @@ class MyTableModel(qt.QAbstractTableModel):
                 self.valueArray[i] += [value]
 
     # Methods required for Read-Only access
-    def flags(self):
-        pass
+#    def flags(self):
+#        pass
 
     def data(self, index, role):
-        if not index.isValid():
+        if not index.isValid() or role != qt.Qt.DisplayRole:
             return qt.QVariant()
-        if role == qt.Qt.DisplayRole:
-            returnType = qt.QString
-        else:
-            returnType = float
         i = index.row() 
         j = index.column()
-        value = valueArray[i][j]
+        value = self.valueArray[i][j]
+        print "Fetching (%d, %d)" % (i, j)
         if value is not None:
-            ret = returnType( value.__repr__() )
+            ret = qt.QString( value.__repr__() )
         else:
-            if returnType == qt.QString:
-                ret = qt.QString('---') # Invalid QVariant -> qt.QVariant()
-            else:
-                ret = None
+            ret = qt.QString('---')
         return ret
 
     def headerData(self,  section,  orientation,  role):
@@ -66,29 +60,33 @@ class MyTableModel(qt.QAbstractTableModel):
         if orientation == qt.Qt.Vertical:
             return returnType( self.legendList[section] )
 
-    def rowCount(self):
+    def rowCount(self,  parent):
+#        if parent.isValid():
+#            return 0
         return len(self.legendList)
 
-    def columnCount(self):
+    def columnCount(self,  parent):
+#        if parent.isValid():
+#            return 0
         return len(self.motorList)
 
-    # Methods for resizable models: Should return TRUE when sucessfull
-    def insertRows(self):
-        '''
-        Call beginInsertRows() before inserting new rows into ANY underlying data structure
-        Call endInsertRows() afterwards
-        '''
-        pass
-    def removeRows(self):
-        '''
-        Call beginRemoveRows() before inserting new rows into ANY underlying data structure
-        Call endRemoveRows() afterwards
-        '''
-        pass
-    def insertColumns(self):
-        pass
-    def removeColumns(self):
-        pass
+#    # Methods for resizable models: Should return TRUE when sucessfull
+#    def insertRows(self):
+#        '''
+#        Call beginInsertRows() before inserting new rows into ANY underlying data structure
+#        Call endInsertRows() afterwards
+#        '''
+#        pass
+#    def removeRows(self):
+#        '''
+#        Call beginRemoveRows() before inserting new rows into ANY underlying data structure
+#        Call endRemoveRows() afterwards
+#        '''
+#        pass
+#    def insertColumns(self):
+#        pass
+#    def removeColumns(self):
+#        pass
 
 def main():
     legends = ['Curve0', 'Curve1', 'Curve2', 'Curve3', 'Curve4', 'Curve5', 'Curve6', 'Curve7', 'Curve8', 'Curve9']
@@ -96,11 +94,18 @@ def main():
     return MyTableModel(None,  legends,  motors)
 
 if __name__ == '__main__':
+    import sys
     a = main()
-    print "nRows: %d" % a.rowCount()
-    print "nCols: %d" % a.columnCount()
-    index = a.index(1,1)
-    elem = a.data(index, qt.Qt.SizeHintRole) # or: qt.Qt.DisplayRole
-    print "Type: %s\nValue: %s" % (str(type(elem)), str(elem))
-    print "QVariant Type: %s" % (str(elem.toFloat()))
-    print('Done!')
+    app = qt.QApplication(sys.argv)
+    table = qt.QTableView(None)
+    table.setModel(a)
+    print table.verticalHeader()
+#    print "nRows: %d" % a.rowCount()
+#    print "nCols: %d" % a.columnCount()
+#    index = a.index(1,1)
+#    elem = a.data(index, qt.Qt.SizeHintRole) # or: qt.Qt.DisplayRole
+#    print "Type: %s\nValue: %s" % (str(type(elem)), str(elem))
+#    print "QVariant Type: %s" % (str(elem.toFloat()))
+#    print('Done!')
+    table.show()
+    app.exec_()
