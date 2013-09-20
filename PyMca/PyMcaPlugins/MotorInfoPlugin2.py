@@ -1,28 +1,27 @@
 import numpy,  weakref
+
 try:
     from PyMca import Plugin1DBase
 except ImportError:
     from . import Plugin1DBase
-    
+
 try:
-    from PyMca import SortPlotsWindow
+    from PyMca import MotorInfoWindow2
 except ImportError:
-    print("SortPlotsWindow importing from somewhere else")
-    import SortPlotsWindow
+    print("MotorInfoPlugin importing from somewhere else")
+    import MotorInfoWindow2
     
 DEBUG = 0
-class SortPlots(Plugin1DBase.Plugin1DBase):
+class MotorInfo_Neu(Plugin1DBase.Plugin1DBase):
     def __init__(self,  plotWindow,  **kw):
         Plugin1DBase.Plugin1DBase.__init__(self,  plotWindow,  **kw)
         self.methodDict = {}
-        text = 'Sort plots for motor value.'
-        function = self.showSortPlotsWindow
+        text = 'Show values of different motors.'
+        function = self.showMotorInfo_Neu
         icon = None
         info = text
-        self.methodDict["Sort plots"] =[function, info, icon]
+        self.methodDict["Show Motor Info"] =[function, info, icon]
         self.widget = None
-#        print( str(type(foo)) )
-#        print( foo.__func__.func_name ) # Confirms
     
     def getMethods(self, plottype=None):
         names = list(self.methodDict.keys())
@@ -39,21 +38,16 @@ class SortPlots(Plugin1DBase.Plugin1DBase):
         self.methodDict[name][0]()
         return
 
-    def addActions(self):
-        pass
-
-    def showSortPlotsWindow(self):
+    def showMotorInfo_Neu(self):
         self._setLists()
         if self.widget is None:
             self._createWidget()
         else:
-#            self._setLists()
-#            self.widget.updatePlots(self.legendsList,  self.motorValuesList)
-            self.widget.updatePlots()
-#        self._setActions()
+            self._setLists()
+            self.widget.table.updateTable(self.legendsList,  self.motorValuesList)
         self.widget.show()
         self.widget.raise_()
-
+        
     def _setLists(self):
         curves = self.getAllCurves()
         nCurves = len(curves)
@@ -62,13 +56,6 @@ class SortPlots(Plugin1DBase.Plugin1DBase):
         self.legendsList = [leg for (xvals, yvals,  leg,  info) in curves] 
         infoList = [info for (xvals, yvals,  leg,  info) in curves] 
         self.motorValuesList = self._convertInfoDictionary( infoList )
-        
-#    def _setActions(self):
-#        if self.widget:
-#            functions = [('Set active curve',  self._plotWindow.setActiveCurve), 
-#                                ('Get active curve',  self._plotWindow.getActiveCurve), 
-#                                ('Remove curve(s)',  self._plotWindow.getActiveCurve)]
-#            self.widget.updateActionList(functions)
 
     def _convertInfoDictionary(self,  infosList):
         ret = []
@@ -98,31 +85,25 @@ class SortPlots(Plugin1DBase.Plugin1DBase):
             else:
                 print("Number of motors and values does not match!")
         return ret
-
+    
     def _createWidget(self):
         parent = None
-        self.widget = SortPlotsWindow.SortPlotsWidget(parent,  
-                                                                                 list(self.legendsList),  
-                                                                                 list(self.motorValuesList), 
-                                                                                 self._plotWindow)
-#        self.widget.buttonUpdate.clicked.connect(self.showSortPlotsWindow)
+        self.widget = MotorInfoWindow_Neu.MotorInfoDialog(parent,  
+                                                                                  list(self.legendsList),  
+                                                                                  list(self.motorValuesList)) 
+        self.widget.buttonUpdate.clicked.connect(self.showMotorInfo_Neu)
 
-MENU_TEXT = "Sort Plots"
+MENU_TEXT = "Motor Info (New)"
 def getPlugin1DInstance(plotWindow,  **kw):
-    ob = SortPlots(plotWindow)
+    ob = MotorInfo_Neu(plotWindow)
     return ob
-    
+
 if __name__ == "__main__":
+    # Basic test setup
     from PyMca import Plot1D
-    from PyMca import ScanWindow
-    from PyMca import PyMcaQt as qt
-    import sys
     x = numpy.arange(100.)
     y = x * x
     plot = Plot1D.Plot1D()
     plot.addCurve(x, y, "Curve1", {'MotorNames': "foo bar",  'MotorValues': "3.14 2.97"})
     plot.addCurve(x+100, -x*x, "Curve2", {'MotorNames': "baz",  'MotorValues': "6.28"})
     plugin = getPlugin1DInstance(plot)
-    app = qt.QApplication(sys.argv)
-    plugin.showSortPlotsWindow()
-    app.exec_()
