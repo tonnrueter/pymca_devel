@@ -98,7 +98,7 @@ class SortPlots(Plugin1DBase.Plugin1DBase):
                                                       list(self.motorValuesList), 
                                                       self._plotWindow,
                                                       nSelectors = 1,
-                                                      defaultMotor = 'PhaseD',
+                                                      defaultMotor = 'foobar',
                                                       instructions = False,
                                                       selView = False,
                                                       cbWindow = True)

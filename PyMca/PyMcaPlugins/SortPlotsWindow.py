@@ -120,18 +120,18 @@ class SortPlotsScanWindow(sw.ScanWindow):
         buttonReplaceAll.clicked.connect(self.replaceAll)
         
         if selection != []:
-            self.XMCD(selection, 
+            self.performXMCD(selection,
                       remove_spikes,
                       noise_filter,
                       plot_xas,
                       normalize)
 
-    def XMCD(self,
-             selection = [],
-             remove_spikes = False,
-             noise_filter = False,
-             plot_xas = False,
-             normalize = False):
+    def performXMCD(self,
+                    selection     = [],
+                    remove_spikes = False,
+                    noise_filter  = False,
+                    plot_xas      = False,
+                    normalize     = False):
         '''
         Function to perform XMCD Anlysis before plotting
         '''
@@ -174,6 +174,7 @@ class SortPlotsScanWindow(sw.ScanWindow):
             if noise_filter:
                 # Savitzky Golay smoothing
                 # instead of Wiener filter
+                # TODO: Requires equidistant x-values
                 yVal = getSavitzkyGolay(yVal)
             if normalize:
                 yVal = self.normalize(xVal, yVal)
@@ -277,7 +278,7 @@ class SortPlotsScanWindow(sw.ScanWindow):
                 print '\tarr[%d]: %d' % (i, len(y))
 
         same = True
-        x0 = xarr[0]
+        x0 = xarr[0] # TODO: Case of xarr, yarr = []
         for x in xarr:
             if len(x0) == len(x):
                 if numpy.all(x0 == x):
@@ -459,8 +460,12 @@ class SortPlotsMenu(qt.QMenu):
             self.addAction( act )
 
 class SortPlotsTreeWidget(qt.QTreeWidget):
-    def __init__(self,  parent):
+    
+    selectionModifiedSignal = qt.pyqtSignal(object)
+    
+    def __init__(self,  parent, identifiers = ['p','m','d']):
         qt.QTreeWidget.__init__(self,  parent)
+        self.identifiers = identifiers
 
     def contextMenuEvent(self,  event):
         if event.reason() == event.Mouse:
@@ -495,16 +500,39 @@ class SortPlotsTreeWidget(qt.QTreeWidget):
             else:
                 root.child(i).setSelected( True )
 
-    def selectedItems(self):
-        sel = super(SortPlotsTreeWidget,  self).selectedItems()
+    def selectedItems(self, legendOnly = True):
         ret = []
+        sel = super(SortPlotsTreeWidget,  self).selectedItems()
         for item in sel:
-            # Convert from QTreeWidgetItem to str
             # Only use selected legend
+            # Convert to python string
             ret += [ str(item.text(0)) ]
         if DEBUG:
             print 'selectedItems: %d Item(s) selected'%len(sel)
         return ret
+
+    def getColumn(self, ncol, convertType = str, selectedOnly = False):
+        out = []
+        if ncol > (self.columnCount()-1):
+            # TODO: Raise Error here
+            if DEBUG:
+                print 'getColum -- Warning: Selected column out of bounds'
+            return out
+        if selectedOnly:
+            sel = super(SortPlotsTreeWidget,  self).selectedItems()
+        else:
+            root = self.invisibleRootItem()
+            sel = [root.child(i) for i in range(root.childCount())]
+        for item in sel:
+            tmp = item.text(ncol)
+            try:
+                tmp = convertType(tmp)
+            except ValueError:
+                tmp = str(tmp)
+            except TypeError:
+                tmp = str(tmp)                
+            out += [tmp]
+        return out
 
     def build(self,  items,  headerLabels):
         '''
@@ -518,10 +546,103 @@ class SortPlotsTreeWidget(qt.QTreeWidget):
         self.setHeaderLabels(headerLabels)
         for item in items:
             treeItem = qt.QTreeWidgetItem(self,  item)
-            if treeItem.text(0) in sel:
+            if treeItem.text(1) in sel:
                 treeItem.setSelected(True)
-        if self.columnCount() > 1:
-            self.sortItems(1, qt.Qt.AscendingOrder)
+#        if self.columnCount() > 2: # TODO: Put this into the Widget
+#            self.sortItems(2, qt.Qt.AscendingOrder)
+        self.resizeColumnToContents(0)
+
+    def setSelectionAs(self, id):
+        out = {id: []}
+        if id not in self.identifiers:
+            id = ''
+        sel = super(SortPlotsTreeWidget,  self).selectedItems()
+        for item in sel:
+            out[id] += [str(item.text(1))]
+            item.setText(0,id)
+        for v in out.values():
+            v.sort()
+#        return out
+        self.selectionModifiedSignal.emit(out)
+
+    def setToSequence(self, seq = None, selectionOnly = False):
+        chk = True
+        out = dict( [(id, []) for id in self.identifiers] )
+        if selectionOnly:
+            sel = super(SortPlotsTreeWidget,  self).selectedItems()
+        else:
+            root = self.invisibleRootItem()
+            sel = [root.child(i) for i in range(root.childCount())]
+        print sel[0]
+        if not seq:
+        # Spawn dialog window
+            seq, chk = qt.QInputDialog.getText(None, 
+                                               'Sequence Dialog', 
+                                               'Valid identifiers are: ' + ', '.join(self.identifiers),
+                                               qt.QLineEdit.Normal, 
+                                               'Enter sequence')
+        seq = str(seq) # TODO: Ist das Sauber?
+        if not chk:
+#            return out
+            return
+        for id in seq:
+            if id not in self.identifiers:
+                invalidMsg = qt.QMessageBox(None)
+                invalidMsg.setText('Invalid sequence. Try again.')
+                invalidMsg.setStandardButtons(qt.QMessageBox.Ok)
+                invalidMsg.exec_()
+                return out
+        if len(sel) != len(seq):
+            if DEBUG:
+                print 'Warning: Sequence length does not match Item#'
+                return
+        # Ensure alphabetically ordered List
+        self.sortItems(1, qt.Qt.AscendingOrder)
+        for (id, item) in zip(seq, sel):
+            if id not in self.identifiers:
+                id = ''
+            else:
+                out[id] += [str(item.text(1))]
+            item.setText(0, id)
+        for v in out.values():
+            v.sort()
+#        return out
+        self.selectionModifiedSignal.emit(out)
+
+    def clearSequence(self, selectionOnly=True):
+        out  = dict((id, []) for id in self.identifiers)
+        root = self.invisibleRootItem()
+        sel0 = super(SortPlotsTreeWidget, self).selectedItems()
+        sel1 = [root.child(i) for i in range(root.childCount())]
+        for item in sel0:
+            item.setText(0,'')
+        for item in sel1:
+            id    = str(item.text(0))
+            label = str(item.text(1))
+            if id != '':
+                out[id] += [label]
+        print out
+        self.selectionModifiedSignal.emit(out)
+
+#class SequenceInput(qt.QInputDialog):
+#    def __init__(self, parent, identifiers):
+#        qt.QInputDialog.__init__(self, parent)
+#        self.identifiers = identifiers
+#    
+#    def getText(self):
+#        seq, chk = qt.QInputDialog.getText(None, 
+#                                            'Sequence Dialog', 
+#                                            'Here be text', 
+#                                            qt.QLineEdit.Normal, 
+#                                            'Enter sequence')
+#        if not chk:
+#            return '', False
+#        # Check sequence for vailidity
+#        for id in seq:
+#            if id not in self.identifiers:
+#                self.invalidSeq()
+#                break
+#        return seq, chk
 
 class SortPlotsInstructionWidget(qt.QWidget):
     def __init__(self,  parent):
@@ -554,6 +675,7 @@ class SortPlotsInstructionWidget(qt.QWidget):
 class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
     
     actionListModifiedSignal = qt.pyqtSignal()
+    setSelectionSignal       = qt.pyqtSignal(str)
     
     def __init__(self,  parent,
                         legends,
@@ -565,7 +687,7 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
                         instructions = False,
                         selView = False,
                         cbWindow = True,
-                        singleScanWindow = False):
+                        singleScanWindow = True):
         """
         legends            List contains Plotnames
         motorValues     List contains names and values of the motors
@@ -581,15 +703,18 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
         self.actionList = actions
         self.cBoxList = []
         if singleScanWindow:
-            self.ScanWindow = SortPlotsScanWindow(origin=plotWindow, parent=self)
+            self.ScanWindow = SortPlotsScanWindow(origin=plotWindow, parent=None)
         else:
             self.ScanWindow = None
         self.ScanWindowA = None
         self.ScanWindowB = None
         self.closeWidget = CloseEventNotifyingWidget.CloseEventNotifyingWidget()
         self.plotWindow = plotWindow
+        # TODO: Custom identifiers?
+        self.selectionDict = {'d': [],
+                              'p': [],
+                              'm': []}
         self.pselection = qt.QStringListModel(self)
-        self.mselection = qt.QStringListModel(self)
         self.defaultMotor = defaultMotor
 
         updatePixmap = qt.QPixmap(IconDict["reload"])
@@ -598,12 +723,14 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
                                       self)
         
         cBoxLabel = qt.QLabel( qt.QString('Select motor:'),  self)
+        first = True
         for i in range(nSelectors):
             cBox = qt.QComboBox(self)
             cBox.addItems( self.motorNamesList )
-            if self.defaultMotor in self.motorNamesList:
+            if (self.defaultMotor in self.motorNamesList) and first:
                 idx = self.motorNamesList.index(self.defaultMotor)
                 cBox.setCurrentIndex(idx)
+                first = False
             cBox.activated['QString'].connect(self.updateTree)
             self.cBoxList += [cBox]
         
@@ -634,35 +761,62 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
         else:
             self.instWidget = None    
         if cbWindow:
-            print ('Creating CheckBoxWindow')
+            print 'Creating CheckBoxWindow'
             self.checkBoxWidget = CheckBoxWindow(self)
             mainLayout.addWidget(self.checkBoxWidget)
         else:
             self.checkBoxWidget = None
-        if selView:
-            print 'Adding selectionView'
-            self.selectionView = SPExtension(self, self.pselection,  self.mselection)
-            mainLayout.addWidget(self.selectionView)
-        else:
-            self.selectionView = None
-        
+#        if selView:
+#            print 'Adding selectionView'
+#            self.selectionView = SPExtension(self,
+#                                             self.selectionDict['p'],
+#                                             self.selectionDict['m'])
+#            mainLayout.addWidget(self.selectionView)
+#        else:
+#            self.selectionView = None
+
 #        self.resize(500,  500)
 
         buttonUpdate.clicked.connect(self.updatePlots)
+        self.list.selectionModifiedSignal.connect(self.updateSelectionDict)
         
         if singleScanWindow:
             # Add ScanWindow to the Layout
-            nRowsLayout = mainLayout.rowCount()
-            mainLayout.addWidget( self.ScanWindow, 0, 1, nRowsLayout, 1 )
+#            nRowsLayout = mainLayout.rowCount()
+#            mainLayout.addWidget( self.ScanWindow, 0, 1, nRowsLayout, 1 )
+            # Keep ScanWindow independent
+            self.ScanWindow.show()
 
         self.setLayout(mainLayout)
 
         self.updateTree()
+        if self.defaultMotor and\
+          (self.defaultMotor in self.motorNamesList):
+            # 1. Sort list for column 2
+            # 2. Determine length of continuous motor value
+            pivot = 0.
+            seq = ''
+            if self.list.columnCount() > 2:
+                mval = map(lambda x: 'p' if x>=pivot else 'm', 
+                           self.list.getColumn(2,float))
+                seq = ''.join(mval)
+                self.list.setToSequence(seq)
+                self.list.sortItems(2, qt.Qt.AscendingOrder)
         self.updateActionList(
               [('Invert selection', self.list.invertSelection), 
-                ('Process as A',    self.processAsA), 
-                ('Process as B',    self.processAsB), 
+                ('Set as p',    self.setAsP), 
+                ('Set as m',    self.setAsM), 
+                ('Set as d',    self.setAsD), 
+                ('Enter sequence', self.list.setToSequence),
+                ('Clear sequence', self.list.clearSequence),
+                ('XMCD analysis', self.triggerXMCD),
                 ('Remove curve(s)', self.removeCurve_)])
+
+    def triggerXMCD(self):
+        msel = self.selectionDict['m']
+        psel = self.selectionDict['p']
+        self.ScanWindow.performXMCD(msel)
+        self.ScanWindow.performXMCD(psel)
 
     def getAllMotorNames(self):
         names = []
@@ -678,6 +832,25 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
         self.plotWindow.removeCurves(sel)
         self.updatePlots()
 
+    def updateSelectionDict(self, ddict):
+        # TODO: Best solution? Sort lists at the end?
+        old = self.selectionDict
+        self.selectionDict = {}
+        added = []
+        for (k, v) in ddict.items():
+            self.selectionDict[k] = v
+            added += v
+        for (k, v) in old.items():
+            if k not in self.selectionDict:
+                self.selectionDict[k] = []
+                for item in v:
+                    if item not in added:
+                        self.selectionDict[k] += [item]
+                        added += [item]
+        for v in self.selectionDict.values():
+            v.sort()
+        print self.selectionDict
+
     def updatePlots(self,
                     newLegends = None,  
                     newMotorValues = None):
@@ -692,14 +865,20 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
         self.updateTree()
 
     def updateTree(self):
+#        if id not in ['p','m','d']:
+#            id = ''
         mList = [ str( cBox.currentText() ) for cBox in self.cBoxList ]
-        labels = ['Legend'] + mList
+        labels = ['#','Legend'] + mList
         items = []
         for i in range(len(self.legendList)):
-            tmp = qt.QStringList()
             legend = self.legendList[i]
             values = self.motorsList[i]
-            tmp.append( legend )
+            id = ''
+            for (k,v) in self.selectionDict.items():
+                if legend in v:
+                    id = k
+                    break
+            tmp = qt.QStringList([id, legend])
             for m in mList:
                 if m == '':
                     tmp.append( '' )
@@ -733,11 +912,6 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
             if self.ScanWindowA.isVisible():
                 self.ScanWindowA.close()
         self.ScanWindowA = self.spawnNewScanWindow('A')
-
-        if self.selectionView:
-            sel = self.list.selectedItems()
-            self.pselection.setStringList(sel)
-        
         print 'ProcessAsA finished'
     
     def processAsB(self):
@@ -746,6 +920,15 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
                 self.ScanWindowB.close()
         self.ScanWindowB = self.spawnNewScanWindow('B')
         print 'ProcessAsB finished'
+
+    def setAsD(self):
+        self.list.setSelectionAs('d')
+        
+    def setAsM(self):
+        self.list.setSelectionAs('m')
+        
+    def setAsP(self):
+        self.list.setSelectionAs('p')
 
     def spawnNewScanWindow(self,  name=''):
         removeSpikes = False
@@ -824,7 +1007,7 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
             if swin:
                 swin.close()
         self.close()
- 
+
 def main():
     import sys,  numpy
     app = qt.QApplication(sys.argv)
