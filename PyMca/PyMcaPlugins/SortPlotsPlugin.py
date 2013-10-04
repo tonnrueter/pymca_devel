@@ -1,3 +1,4 @@
+
 import numpy
 try:
     from PyMca import Plugin1DBase
@@ -98,7 +99,7 @@ class SortPlots(Plugin1DBase.Plugin1DBase):
                                                       list(self.motorValuesList), 
                                                       self._plotWindow,
                                                       nSelectors = 1,
-                                                      defaultMotor = 'foobar',
+                                                      defaultMotor = 'PhaseD',
                                                       instructions = False,
                                                       selView = False,
                                                       cbWindow = True)
