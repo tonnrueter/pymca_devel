@@ -98,7 +98,7 @@ class SortPlots(Plugin1DBase.Plugin1DBase):
                                                       list(self.legendsList),  
                                                       list(self.motorValuesList), 
                                                       self._plotWindow,
-                                                      nSelectors = 1,
+                                                      nSelectors = 2,
                                                       defaultMotor = 'PhaseD',
                                                       instructions = False,
                                                       selView = False,

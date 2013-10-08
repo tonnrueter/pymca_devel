@@ -9,70 +9,69 @@ from PyMca.SGModule import getSavitzkyGolay
 from PyMca import DataObject
 
 DEBUG = True
-class SPExtension(qt.QWidget):
-    def __init__(self,  parent,  psel = None,  msel = None):
-        qt.QWidget.__init__(self, parent)
-
-        if psel:
-            self.pselection = psel
-        else:
-            self.pselection = qt.QStringListModel(self)
-
-        if msel:
-            self.mselection = msel
-        else:
-            self.mselection = qt.QStringListModel(self)
-
-        self.pview = qt.QListView(self)
-        self.mview = qt.QListView(self)
-
-        self.pview.setModel(self.pselection)
-        self.mview.setModel(self.mselection)
-
-        mainLayout = qt.QHBoxLayout(self)
-        mainLayout.addWidget(self.pview)
-        mainLayout.addWidget(self.mview)
-        self.setLayout(mainLayout)
-
 class CheckBoxWindow(qt.QWidget):
+
+#    optionChangedSignal = qt.pyqtSignal()
+    plotOptionChangedSignal = qt.pyqtSignal()
+    calcOptionChangedSignal = qt.pyqtSignal()
+     
     def __init__(self,  parent):
         qt.QWidget.__init__(self, parent)
 
-#        groupBox = qt.QGroupBox('XMCD Options',  self)
-
         self.cbRemoveSpikes = qt.QCheckBox('Remove &spikes', self)
         self.cbNoiseFilter  = qt.QCheckBox('Apply noise &filter', self)
-        self.cbXAS          = qt.QCheckBox('Calculate &XAS', self)
         self.cbNormalize    = qt.QCheckBox('&Normalize scans', self)
+        self.cbXAS          = qt.QCheckBox('Calculate &XAS', self)
+        self.cbFlip         = qt.QCheckBox('&Flip XMCD', self)
+        self.cbDetrend      = qt.QCheckBox('&Detrend XMCD', self)
+        
+        self.cbRemoveSpikes.stateChanged.connect(self.emitCalcOptionChangedSignal)
+        self.cbNoiseFilter.stateChanged.connect(self.emitCalcOptionChangedSignal)
+        self.cbNormalize.stateChanged.connect(self.emitCalcOptionChangedSignal)
+        
+        self.cbXAS.stateChanged.connect(self.emitPlotOptionChangedSignal)
+        self.cbFlip.stateChanged.connect(self.emitPlotOptionChangedSignal)
+        self.cbDetrend.stateChanged.connect(self.emitPlotOptionChangedSignal)
 
-#        widthLayout = qt.QHBoxLayout()
-#        self.removeSpikesThreshold = qt.QLineEdit('0.001',  self)
-#        self.removeSpikesWidth = qt.QLineEdit('5',  self)
-#        thresholdLayout = qt.QHBoxLayout()
-#        thresholdLayout.addWidget(qt.QLabel('Threshold'))
-#        thresholdLayout.addWidget(qt.HorizontalSpacer())
-#        thresholdLayout.addWidget(self.removeSpikesThreshold)
-#        widhtLayout = qt.QHBoxLayout()
-#        widthLayout.addWidget(qt.QLabel('Width'))
-#        widthLayout.addWidget(qt.HorizontalSpacer())
-#        widthLayout.addWidget(self.removeSpikesWidth)
+#        self.cbRemoveSpikes.stateChanged.connect(self.emitOptionChangedSignal)
+#        self.cbNoiseFilter.stateChanged.connect(self.emitOptionChangedSignal)
+#        self.cbNormalize.stateChanged.connect(self.emitOptionChangedSignal)
+#        self.cbXAS.stateChanged.connect(self.emitOptionChangedSignal)
+#        self.cbFlip.stateChanged.connect(self.emitOptionChangedSignal)
+#        self.cbDetrend.stateChanged.connect(self.emitOptionChangedSignal)
 
         mainLayout = qt.QVBoxLayout(self)
         mainLayout.addWidget(self.cbRemoveSpikes)
-#        mainLayout.addLayout(widthLayout)
-#        mainLayout.addLayout(thresholdLayout)        
         mainLayout.addWidget(self.cbNoiseFilter)
-        mainLayout.addWidget(self.cbXAS)
         mainLayout.addWidget(self.cbNormalize)
+        mainLayout.addWidget(self.cbXAS)
+        mainLayout.addWidget(self.cbDetrend)
+        mainLayout.addWidget(self.cbFlip)
         self.setLayout(mainLayout)
 
-#        groupBox.setLayout(mainLayout)
+#    def emitOptionChangedSignal(self, val):
+#        self.optionChangedSignal.emit()
+        
+    def emitPlotOptionChangedSignal(self, val):
+        self.plotOptionChangedSignal.emit()
+        
+    def emitCalcOptionChangedSignal(self, val):
+        self.calcOptionChangedSignal.emit()
 
     def check(self):
         return (self.cbRemoveSpikes.isChecked(),
                 self.cbNoiseFilter.isChecked(),
-                self.cbXAS.isChecked(),
                 self.cbNormalize.isChecked())
+
+    def checkCalc(self):
+        return (self.cbRemoveSpikes.isChecked(),
+                self.cbNoiseFilter.isChecked(),
+                self.cbNormalize.isChecked())
+
+    def checkPlot(self):
+        return (self.cbXAS.isChecked(),
+                self.cbDetrend.isChecked(),
+                self.cbFlip.isChecked())
 
     def removeSpikeValues(self):
         pass
@@ -80,7 +79,7 @@ class CheckBoxWindow(qt.QWidget):
 
 class SortPlotsScanWindow(sw.ScanWindow):
 
-#    plotModifiedSignal = qt.pyqtSignal()
+    plotModifiedSignal = qt.pyqtSignal()
 
     def __init__(self,
                  origin,
@@ -103,6 +102,7 @@ class SortPlotsScanWindow(sw.ScanWindow):
         buttonLayout = qt.QHBoxLayout(None)
         buttonLayout.setContentsMargins(0, 0, 0, 0)
         buttonLayout.setSpacing(5)
+        # Show XAS & XMCD Buttons
         buttonLayout.addWidget(qt.HorizontalSpacer(self))
         buttonLayout.addWidget(buttonAdd)
         buttonLayout.addWidget(buttonAddAll)
@@ -120,6 +120,7 @@ class SortPlotsScanWindow(sw.ScanWindow):
         self.pspectra = []
         self.mspectra = []
         self.curvesDict = {}
+        self.XMCDperformed = False
 
         self.xRange = None
         self.avg_m = None # DataObjects?
@@ -201,37 +202,37 @@ class SortPlotsScanWindow(sw.ScanWindow):
         return numpy.linspace(xmin, xmax, num)
 
     def processSelection(self, msel, psel):
-        self.selectionDict = {'m': msel,
-                              'p': psel}
+        self.selectionDict = {'m': msel[:],
+                              'p': psel[:]}
         self.prepareCurves(msel + psel)
-        if DEBUG:
-            print 'processSelection -- selectionDict:\n\t',
-            print self.selectionDict
-            print 'processSelection -- curvesDict:\n\t',
-            print self.curvesDict
+        if self.XMCDperformed:
+            self.performXMCD()
+#        if DEBUG:
+#            print 'processSelection -- selectionDict:\n\t',
+#            print self.selectionDict
+#            print 'processSelection -- curvesDict:\n\t',
+#            print self.curvesDict
         
     def prepareCurves(self,
-                      selection     = [],
+                      selection     = [],        
                       remove_spikes = False,
                       noise_filter  = False,
-                      plot_xas      = False,
                       normalize     = False):
-        '''
-        Function to perform XMCD Anlysis before plotting
-        '''
-        print 'prepareCurves -- selection:\n\t',
-        print '\n\t'.join(selection)
-        
-        self.curvesDict = {}
-        pwX1min, pwX1max = self.plotWindow.graph.getX1AxisLimits()
+        if DEBUG:
+            print 'prepareCurves -- selection:\n\t',
+            print '\n\t'.join(selection)
+        # Copy curves from origin
         for legend in selection:
-            self.plotWindow.setActiveCurve(legend)
+#            if legend not in self.curvesDict.keys():
             tmp = self.plotWindow.dataObjectsDict.get(legend, None)
             if tmp is None:
                 # TODO: Errorhandling, curve not found
-                print "Retrieved none type curve"
+                print "prepareCurves -- Retrieved none type curve"
                 continue
-            tmp = copy.deepcopy(tmp)
+            self.curvesDict[legend] = copy.deepcopy(tmp)
+        # Process the curves
+        pwX1min, pwX1max = self.plotWindow.graph.getX1AxisLimits()
+        for (legend, tmp) in self.curvesDict.items():
             xVal = tmp.x[0]
             yVal = tmp.y[0]
             if (xVal[0] < pwX1min) or (xVal[-1] > pwX1max):
@@ -249,7 +250,25 @@ class SortPlotsScanWindow(sw.ScanWindow):
                 yVal = getSavitzkyGolay(yVal)
             if normalize:
                 yVal = self.normalize(xVal, yVal)
+            tmp.x[0] = xVal
+            tmp.y[0] = yVal
             self.curvesDict[legend] = tmp
+        if DEBUG:
+#            for v in self.curvesDict.values():
+#                print v.info
+            print 'prepareCurves -- finished'
+#            self.removeCurves(self.curvesDict.keys())
+#            for v in self.curvesDict.values():
+#                x = v.x[0]
+#                y = v.y[0]
+#                leg = v.info.get('selectionlegend', 'foo')
+#                print v.info
+#                xlabel = v.info.get('xlabel', 'Xfoo')
+#                ylabel = v.info.get('ylabel', 'Yfoo')
+#                info = {}
+#                info['xlabel'] = xlabel
+#                info['ylabel'] = ylabel    
+#                self.addCurve(x,y,leg,info)
 
     def spikeRemoval(self,  inp,
                      threshold=0.001,
@@ -297,13 +316,7 @@ class SortPlotsScanWindow(sw.ScanWindow):
         ynorm /= ymax
         return ynorm
 
-#    def performXMCD(self):
-#        # Set xrange:
-#        # 1. If activeCurve in pw
-#        for (id, label) in selectionDict.items():
-#            tmpDataObject = 
-            
-
+    
     def specAverage(self, xarr, yarr, xrange = None):
         '''
         xarr : list
@@ -403,6 +416,146 @@ class SortPlotsScanWindow(sw.ScanWindow):
             print '\tnum = ', len(xnew)
         return xnew, ynew
 
+    def extractLabels(self, info):
+        xlabel = 'X'
+        ylabel = 'Y'
+        sel = info.get('selection', None)
+        labelNames = info.get('LabelNames',[])
+        if sel:
+            xsel = sel.get('x',[])
+            ysel = sel.get('y',[])
+            if len(xsel) > 0:
+                x = xsel[0]
+            else:
+                y = -1
+            if len(ysel) > 0:
+                y = ysel[0]
+            else:
+                y = -1
+            if len(labelNames) == 2:
+                [xlabel, ylabel] = labelNames
+            elif (len(labelNames) > max(x,y)):
+                if y > 0:
+                    ylabel = labelNames[y]
+                if x > 0:
+                    xlabel = labelNames[x]
+        return xlabel, ylabel
+
+    def performXMCD(self):
+        '''
+        Function to perform XMCD Anlysis before plotting
+        '''
+        hasAvgM = False
+        hasAvgP = False
+        if DEBUG:
+            print 'm: ', self.selectionDict['m']
+            print 'p: ', self.selectionDict['p']
+        if (len(self.curvesDict) == 0) and (len(self.selectionDict) == 0):
+            # Nothing to do
+            return
+
+        activeLegend = self.plotWindow.graph.getActiveCurve(justlegend=True)
+        if not activeLegend:
+            # Use first curve in the series as xrange
+            activeLegend = sorted(self.curvesDict.keys())[0]
+        
+        active = self.curvesDict[activeLegend]
+        xRange = active.x[0]
+        xlabel, ylabel = self.extractLabels(active.info)
+
+        p_xvalList, p_yvalList = [], []
+        m_yvalList, m_xvalList = [], []
+
+#        p_xvalList = [self.curvesDict[legend].x[0] for legend in active.info['p']]
+        for legend in self.selectionDict['p']:
+            tmp = self.curvesDict[legend]
+            p_xvalList.append(tmp.x[0])
+            p_yvalList.append(tmp.y[0])
+
+        for legend in self.selectionDict['m']:
+            tmp = self.curvesDict[legend]
+            m_xvalList.append(tmp.x[0])
+            m_yvalList.append(tmp.y[0])
+
+        # Clip x-data range
+        xRanges = [data.x[0] for data in self.curvesDict.values()]
+        xMin = sorted([numpy.min(x) for x in xRanges])
+        xMax = sorted([numpy.max(x) for x in xRanges])
+        mask = numpy.nonzero((xRange>=xMin[-1]) & 
+                             (xRange<=xMax[0]))[0]
+        xRange = numpy.take(xRange, mask)
+        
+        if DEBUG:
+            print 'performXMCD -- xRange determined:'
+            print '\tx_min = ', xMin
+            print '\tx_max = ', xMax
+
+        if len(p_xvalList) != 0:
+            avg_p_x, avg_p_y = self.specAverage(p_xvalList,
+                                                p_yvalList,
+                                                xRange)
+            self.newCurve(avg_p_x,
+                          avg_p_y,
+                          'avg_p',
+                          xlabel,
+                          ylabel)
+            hasAvgP = True
+        if len(m_xvalList) != 0:
+            avg_m_x, avg_m_y = self.specAverage(m_xvalList,
+                                                m_yvalList,
+                                                xRange)
+            self.newCurve(avg_m_x,
+                          avg_m_y,
+                          'avg_m',
+                          xlabel,
+                          ylabel,)
+            hasAvgM = True
+
+        if hasAvgM and hasAvgP:
+            if not numpy.all( avg_m_x == avg_p_x ):
+                if DEBUG:
+                    print 'performXMCD -- x ranges are not the same!'
+            else:
+                diff = avg_p_y - avg_m_y
+                xmcdLegend = 'XMCD'
+                self.newCurve(xRange,
+                              diff, 
+                              xmcdLegend,
+                              xlabel,
+                              ylabel)
+                self.graph.mapToY2(' '.join([xmcdLegend, ylabel]))
+                self.graph.checky2scale()
+        self.XMCDperformed = True
+            
+    
+    def calcXAS(self, remove=False):
+        if remove:
+            for (k,v) in self.dataObjectsDict.items():
+                if k.startswith('XAS'):
+                    self.removeCurve(k)
+            return
+        avg_m, avg_p = None, None
+        for (k,v) in self.dataObjectsDict.items():
+            if k.startswith('avg_m'):
+                avg_m = v
+            if k.startswith('avg_p'):
+                avg_p = v
+        if avg_m and avg_p:
+            x_m, y_m = avg_m.x[0], avg_m.y[0]
+            x_p, y_p = avg_p.x[0], avg_p.y[0]
+            if not numpy.all(x_m == x_p):
+                # TODO: XAS Error handling
+                return
+            else:
+                xlabel, ylabel = self.extractLabels(avg_m.info)
+                xas = .5 * (y_m + y_p)
+                xasLegend = 'XAS'
+                self.newCurve(x_m,
+                              xas,
+                              xasLegend,
+                              xlabel,
+                              ylabel)
+    
     def noiseFilter(self, y):
         size  = asarray([3] * len(y.shape))
         mean  = numpy.correlate(y, ones(size), 'same') / product(size, axis=0)
@@ -497,16 +650,52 @@ class SortPlotsScanWindow(sw.ScanWindow):
 
     def closeEvent(self,  event):
         self.close()
-
+    def detrend(self):
+        for (k,v) in self.dataObjectsDict.items():
+            if k.startswith('XMCD'):
+                xmcd = v
+                xmcdLegend = k
+                break
+        xmcd = self.dataObjectsDict[xmcdLegend]
+        x = xmcd.x[0]
+        y = xmcd.y[0]
+#        legend = xmcd.info.get('selectionLegend')
+#        legend = ' '.join([legend,'detrended'])
+        a, b = numpy.polyfit(x,y,1)
+        ynew = y - a*x - b
+        y = ynew
+#        self.removeCurve(xmcdLegend)
+#        xlabel, ylabel = self.extractLabels(xmcd.info)
+#        self.newCurve(x,
+#                      ynew,
+#                      legend=legend,
+#                      xlabel=xlabel,
+#                      ylabel=ylabel)
+#        self.graph.mapToY2(' '.join([legend, ylabel]))
+        self.graph.checky2scale()
+        
+    def flipXMCD(self):
+        if self.XMCDperformed:
+            for (k, v) in self.dataObjectsDict.items():
+                if k.startswith('XMCD'):
+                    print 'here'
+#                    print v.y[0][:10]
+                    v.y[0] *= -1.
+#                    print v.y[0][:10]
+                    self.graph.replot()
+    
 class SortPlotsMenu(qt.QMenu):
-    def __init__(self,  parent,  functionList):
+    def __init__(self,  parent):
+        qt.QMenu.__init__(self,  parent)
+        self.functionList = []
+        
+    def updateFunctions(self):
         '''
         List functions has to have the form (functionName, function)
 
         Default is ('', function)
         '''
-        qt.QMenu.__init__(self,  parent)
-        for (name, function) in functionList:
+        for (name, function) in self.functionList:
             if name != '':
                 fName = name
             else:
@@ -556,26 +745,38 @@ class SortPlotsTreeWidget(qt.QTreeWidget):
             else:
                 root.child(i).setSelected(True)
 
-    def selectedItems(self, legendOnly = True):
-        ret = []
-        sel = super(SortPlotsTreeWidget,  self).selectedItems()
-        for item in sel:
-            # Only use selected legend
-            # Convert to python string
-            ret += [ str(item.text(1)) ]
-        if DEBUG:
-            print 'selectedItems: %d Item(s) selected'%len(sel)
-        return ret
+#    def selectedItems(self, legendOnly = True):
+#        '''
+#        Deprecated. Use getColumn instead
+#        '''
+#        ret = []
+#        sel = super(SortPlotsTreeWidget,  self).selectedItems()
+#        for item in sel:
+#            # Only use selected legend
+#            # Convert to python string
+#            ret += [ str(item.text(1)) ]
+#        if DEBUG:
+#            print 'selectedItems -- %d Item(s) selected'%len(sel)
+#        return ret
 
-    def getColumn(self, ncol, convertType = str, selectedOnly = False):
+    def getColumn(self, ncol, selectedOnly=False, convertType=str):
+        '''
+        Returns items in tree column ncol and converts them
+        to convertType. If the conversion fails, the default
+        type is a python string.
+        
+        If selectedOnly is set to True, only the selected
+        the items of selected rows are returned.
+        '''
         out = []
         if ncol > (self.columnCount()-1):
-            # TODO: Raise Error here
             if DEBUG:
-                print 'getColum -- Warning: Selected column out of bounds'
+                print 'getColum -- Selected column out of bounds'
+            raise IndexError("Selected column '%d' out of bounds" % ncol)
             return out
         if selectedOnly:
-            sel = super(SortPlotsTreeWidget,  self).selectedItems()
+            sel = self.selectedItems()
+#            sel = super(SortPlotsTreeWidget,  self).selectedItems()
         else:
             root = self.invisibleRootItem()
             sel = [root.child(i) for i in range(root.childCount())]
@@ -583,11 +784,11 @@ class SortPlotsTreeWidget(qt.QTreeWidget):
             tmp = item.text(ncol)
             try:
                 tmp = convertType(tmp)
-            except ValueError:
-                tmp = str(tmp)
-            except TypeError:
+            except TypeError, ValueError:
                 tmp = str(tmp)                
             out += [tmp]
+        if DEBUG:
+            print 'getColumn -- %d Item(s) selected'%len(out)
         return out
 
     def build(self,  items,  headerLabels):
@@ -597,22 +798,23 @@ class SortPlotsTreeWidget(qt.QTreeWidget):
         headerLabels must be of type QStringList
         items must be of type [QStringList]
         '''
-        sel = self.selectedItems() # Remember selection
+        # Remember selection, then clear list
+#        sel = self.selectedItems()
+        sel = self.getColumn(1, True)
         self.clear()
         self.setHeaderLabels(headerLabels)
         for item in items:
             treeItem = qt.QTreeWidgetItem(self,  item)
             if treeItem.text(1) in sel:
                 treeItem.setSelected(True)
-#        if self.columnCount() > 2: # TODO: Put this into the Widget
-#            self.sortItems(2, qt.Qt.AscendingOrder)
         self.resizeColumnToContents(0)
 
     def setSelectionAs(self, id):
         out = {id: []}
         if id not in self.identifiers:
             id = ''
-        sel = super(SortPlotsTreeWidget,  self).selectedItems()
+        sel = self.selectedItems()
+#        sel = super(SortPlotsTreeWidget,  self).selectedItems()
         for item in sel:
             out[id] += [str(item.text(1))]
             item.setText(0,id)
@@ -621,25 +823,34 @@ class SortPlotsTreeWidget(qt.QTreeWidget):
 #        return out
         self.selectionModifiedSignal.emit(out)
 
-    def setToSequence(self, seq = None, selectionOnly = False):
+    def setToSequence(self, seq=None, selectionOnly=False):
+        '''
+        Sets the id of the tree items (column 0) to seq. If
+        sequence is None, a dialog window is shown.
+        
+        Emits selectionModifiedSignal
+        '''
         chk = True
         out = dict([(id, []) for id in self.identifiers])
         if selectionOnly:
-            sel = super(SortPlotsTreeWidget,  self).selectedItems()
+#            sel = super(SortPlotsTreeWidget,  self).selectedItems()
+            sel = self.selectedItems()
         else:
             root = self.invisibleRootItem()
             sel = [root.child(i) for i in range(root.childCount())]
-        print sel[0]
+        if DEBUG:
+            print sel[0]
+        # Ensure alphabetically ordered List
+        self.sortItems(1, qt.Qt.AscendingOrder)
         if not seq:
-        # Spawn dialog window
+            # Spawn dialog window
             seq, chk = qt.QInputDialog.getText(None, 
                                                'Sequence Dialog', 
                                                'Valid identifiers are: ' + ', '.join(self.identifiers),
                                                qt.QLineEdit.Normal, 
                                                'Enter sequence')
-        seq = str(seq) # TODO: Ist das Sauber?
+        seq = str(seq) # Ensure 
         if not chk:
-#            return out
             return
         for id in seq:
             if id not in self.identifiers:
@@ -647,13 +858,13 @@ class SortPlotsTreeWidget(qt.QTreeWidget):
                 invalidMsg.setText('Invalid sequence. Try again.')
                 invalidMsg.setStandardButtons(qt.QMessageBox.Ok)
                 invalidMsg.exec_()
-                return out
-        if len(sel) != len(seq):
-            if DEBUG:
-                print 'Warning: Sequence length does not match Item#'
                 return
-        # Ensure alphabetically ordered List
-        self.sortItems(1, qt.Qt.AscendingOrder)
+        if len(sel) != len(seq):
+            invalidMsg = qt.QMessageBox(None)
+            invalidMsg.setText('Sequence length does not match item count.')
+            invalidMsg.setStandardButtons(qt.QMessageBox.Ok)
+            invalidMsg.exec_()
+            return
         for (id, item) in zip(seq, sel):
             if id not in self.identifiers:
                 id = ''
@@ -662,13 +873,14 @@ class SortPlotsTreeWidget(qt.QTreeWidget):
             item.setText(0, id)
         for v in out.values():
             v.sort()
-#        return out
         self.selectionModifiedSignal.emit(out)
 
     def clearSequence(self, selectionOnly=True):
+        
         out  = dict((id, []) for id in self.identifiers)
         root = self.invisibleRootItem()
-        sel0 = super(SortPlotsTreeWidget, self).selectedItems()
+#        sel0 = super(SortPlotsTreeWidget, self).selectedItems()
+        sel0 = self.selectedItems()
         sel1 = [root.child(i) for i in range(root.childCount())]
         for item in sel0:
             item.setText(0,'')
@@ -679,26 +891,6 @@ class SortPlotsTreeWidget(qt.QTreeWidget):
                 out[id] += [label]
         print out
         self.selectionModifiedSignal.emit(out)
-
-#class SequenceInput(qt.QInputDialog):
-#    def __init__(self, parent, identifiers):
-#        qt.QInputDialog.__init__(self, parent)
-#        self.identifiers = identifiers
-#    
-#    def getText(self):
-#        seq, chk = qt.QInputDialog.getText(None, 
-#                                            'Sequence Dialog', 
-#                                            'Here be text', 
-#                                            qt.QLineEdit.Normal, 
-#                                            'Enter sequence')
-#        if not chk:
-#            return '', False
-#        # Check sequence for vailidity
-#        for id in seq:
-#            if id not in self.identifiers:
-#                self.invalidSeq()
-#                break
-#        return seq, chk
 
 class SortPlotsInstructionWidget(qt.QWidget):
     def __init__(self,  parent):
@@ -786,7 +978,7 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
             cBox.activated['QString'].connect(self.updateTree)
             self.cBoxList += [cBox]
 
-        self.list = SortPlotsTreeWidget(self)
+        self.list = SortPlotsTreeWidget(self, )
         labels = ['Legend'] + nSelectors*['']
         ncols  = len(labels)
         self.list.setColumnCount(ncols)
@@ -822,6 +1014,9 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
 
         buttonUpdate.clicked.connect(self.updatePlots)
         self.list.selectionModifiedSignal.connect(self.updateSelectionDict)
+#        self.checkBoxWidget.optionChangedSignal.connect(self.optionChanged)
+        self.checkBoxWidget.calcOptionChangedSignal.connect(self.calcOptionChanged)
+        self.checkBoxWidget.plotOptionChangedSignal.connect(self.plotOptionChanged)
 
         # Add ScanWindow to the Layout
 #            nRowsLayout = mainLayout.rowCount()
@@ -842,8 +1037,42 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
                 ('Remove curve(s)', self.removeCurve_)])
         self.setToDefaultMotor()
 
-    def optionsChanged(self):
-        pass
+#    def optionChanged(self):
+#        (removeSpikes,
+#         noiseFilter,
+#         XAS,
+#         normalize) = self.checkBoxWidget.check()
+#        self.ScanWindow.prepareCurves(
+#                self.selectionDict['m'] + self.selectionDict['p'],
+#                removeSpikes,
+#                noiseFilter,
+#                XAS,
+#                normalize)
+#        self.ScanWindow.performXMCD(XAS)
+
+    def calcOptionChanged(self):
+        (removeSpikes,
+         noiseFilter,
+         normalize) = self.checkBoxWidget.checkCalc()
+        self.ScanWindow.prepareCurves(
+                self.selectionDict['m'] + self.selectionDict['p'],
+                removeSpikes,
+                noiseFilter,
+                normalize)
+        self.ScanWindow.performXMCD()
+
+    def plotOptionChanged(self):
+        (xas,
+         detrend,
+         flip) = self.checkBoxWidget.checkPlot()
+        if xas:
+            self.ScanWindow.calcXAS()
+        else:
+            self.ScanWindow.calcXAS(remove=True)
+        if detrend:
+            self.ScanWindow.detrend()
+        if flip:
+            self.ScanWindow.flipXMCD()
 
     def setToDefaultMotor(self, pivot = 0.):
         '''
@@ -859,16 +1088,17 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
         '''
         if self.defaultMotor and\
           (self.defaultMotor in self.motorNamesList):
-            # 1. Sort list for column 2
-            # 2. Determine length of continuous motor value
             pivot = 0.
             seq = ''
             if self.list.columnCount() > 2:
                 mval = map(lambda x: 'p' if x>=pivot else 'm', 
-                           self.list.getColumn(2,float))
+                           self.list.getColumn(2, convertType=float))
                 seq = ''.join(mval)
                 self.list.setToSequence(seq)
                 self.list.sortItems(2, qt.Qt.AscendingOrder)
+        else:
+            self.list.sortItems(1, qt.Qt.AscendingOrder)
+            
 
     def triggerXMCD(self):
         if DEBUG:
@@ -881,16 +1111,17 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
             self.ScanWindow = sw.ScanWindow()
             self.ScanWindow.show()          
             self.ScanWindow.raise_()
-        (rs, nf, cx, no) = self.checkBoxWidget.check()
+        (rs, nf, no) = self.checkBoxWidget.check()
         msel = self.selectionDict['m']
         psel = self.selectionDict['p']
         if msel != []:
             plotName = 'm'
-            self.ScanWindow.performXMCD(msel, plotName, rs, nf, cx, no)
+#            self.ScanWindow.performXMCD(msel, 'm', rs, nf, cx, no)
+            self.ScanWindow.performXMCD()
         if psel != []:
-            plotName = 'p'
-            self.ScanWindow.performXMCD(psel, plotName, rs, nf, cx, no)
-        self.ScanWindow.difference()
+#            self.ScanWindow.performXMCD(psel, 'p', rs, nf, cx, no)
+            self.ScanWindow.performXMCD()
+#        self.ScanWindow.difference()
 
     def getAllMotorNames(self):
         names = []
@@ -994,22 +1225,21 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
         normalize    = False
         if self.checkBoxWidget:
             (removeSpikes, 
-             noiseFilter, 
-             plotXAS, 
+             noiseFilter,
              normalize) = self.checkBoxWidget.check()
         if DEBUG:
             print 'removeSpikes = ',  removeSpikes
             print 'noiseFilter = ',  noiseFilter
             print 'plotXAS = ', plotXAS
             print 'normalize = ', normalize
-        sel = self.list.selectedItems()
+#        sel = self.list.selectedItems()
+        sel = self.list.getColumn(1, True)
         swin  = SortPlotsScanWindow(self.plotWindow, 
                                     name, 
                                     sel,
                                     None,
                                     remove_spikes = removeSpikes,
                                     noise_filter = noiseFilter,
-                                    plot_xas = plotXAS,
                                     normalize = normalize)
         swin.plotModifiedSignal.connect(self.updatePlots)
         if name == 'A':
@@ -1070,9 +1300,12 @@ def main():
     y1 =  10 * x + 10000. * numpy.exp(-0.5*(x-600)*(x-600)/400) + 1500 * numpy.random.random(1000.)
     y2 =  10 * x + 10000. * numpy.exp(-0.5*(x-400)*(x-400)/400) + 1500 * numpy.random.random(1000.)
     y2[320:322] = 50000.
-    swin.addCurve(x, y2, legend="Curve2", replot=False, replace=False)
-    swin.addCurve(x, y0, legend="Curve0", replot=False, replace=False)
-    swin.addCurve(x, y1, legend="Curve1", replot=False, replace=False)
+    swin.newCurve(x, y2, legend="Curve2", xlabel='ene_st2', ylabel='zratio2', replot=False, replace=False)
+    swin.newCurve(x, y0, legend="Curve0", xlabel='ene_st0', ylabel='zratio0', replot=False, replace=False)
+    swin.newCurve(x, y1, legend="Curve1", xlabel='ene_st1', ylabel='zratio1', replot=False, replace=False)
+    
+    for v in swin.dataObjectsDict.values():
+        print v
 
     w = SortPlotsWidget(None, swin.getAllCurves(just_legend=True),  motors,  swin,  selView = False, defaultMotor = 'Motor11')
 #    w = CheckBoxWindow(None)
