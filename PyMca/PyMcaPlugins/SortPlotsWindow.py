@@ -15,14 +15,12 @@ class SortPlotsScanWindow(sw.ScanWindow):
 
     def __init__(self,
                  origin,
-                 control,
                  parent=None):
         sw.ScanWindow.__init__(self, 
                                parent, 
                                name='XMCD Analysis', 
                                specfit=None)
         self.plotWindow = origin
-        self.controller = control
 
         self.scanWindowInfoWidget.hide()
 
@@ -50,7 +48,6 @@ class SortPlotsScanWindow(sw.ScanWindow):
         buttonReplace.clicked.connect(self.replace)
         buttonAddAll.clicked.connect(self.addAll)
         buttonReplaceAll.clicked.connect(self.replaceAll)
-        self.controller.setSelectionSignal.connect(self.processSelection)
 
         # Copy spectra from origin
         self.selectionDict = {'m':[], 'p':[]}
@@ -183,34 +180,6 @@ class SortPlotsScanWindow(sw.ScanWindow):
             print 'prepareCurves -- finished'
         # Sort before returning
 #        return sorted(out, key=lambda dataObject: dataObject.info['selectionlegend'])
-        return out
-
-    def spikeRemoval(self,  inp,
-                     threshold=0.001,
-                     length=5):
-        '''
-        inp :  Numpy array 
-            Contains the y-Values of the spectrum
-        threshold : Float
-            Threshold value for replacement
-        length : Int
-            Window length of medium filter. Must be
-            an odd integer.
-
-        Returns
-        -------
-        out : Numpy array
-            Replaced values in the spectra whose difference
-            to medium spectrum is above threshold level.
-        '''
-        if DEBUG:
-            print 'Perform spike removal.. ', 
-            print 'Threshold: %.3f, ' % threshold, 
-            print 'Window length: %d' % length
-        filtered = median.medfilt1d(inp, length)
-        out = numpy.where(abs(filtered-inp)>threshold,
-                          filtered, 
-                          inp)
         return out
 
     def normalize(self,  x, y):
@@ -535,6 +504,7 @@ class SortPlotsScanWindow(sw.ScanWindow):
 
         return out
 
+    # TODO: NAMING in add ... replaceAll
     def add(self):
         if DEBUG:
             print 'add():'
@@ -888,21 +858,22 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
              ...,
              {'MotorName2':MotorValue2, ... , 'MotorNameM':MotorValueM}]
         """
-        CloseEventNotifyingWidget.CloseEventNotifyingWidget.__init__(self,  parent)
+        CloseEventNotifyingWidget.\
+            CloseEventNotifyingWidget.__init__(self,  parent)
         self.plotWindow = plotWindow
         self.legendList = []
         self.motorsList = []
         # Set self.plotWindow before calling self._setLists!
         self._setLists()
-        print self.legendList
         self.motorNamesList = [''] + self._getAllMotorNames()
         self.motorNamesList.sort()
-        print self.motorNamesList
         self.numCurves = len(self.legendList)
         self.cBoxList = []
         self.ScanWindow = SortPlotsScanWindow(origin=plotWindow, 
-                                              control=self, 
                                               parent=None)
+                                              
+        self.notifyCloseEventToWidget(self)
+        self.notifyCloseEventToWidget(self.ScanWindow)
         self.selectionDict = {'d': [],
                               'p': [],
                               'm': []}
@@ -967,7 +938,8 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
 
         buttonUpdate.clicked.connect(self.updatePlots)
         self.list.selectionModifiedSignal.connect(self.updateSelectionDict)
-        self.ScanWindow.show()
+        self.setSelectionSignal.connect(self.ScanWindow.processSelection)
+#        self.ScanWindow.show()
         #TODO : Shortcuts
 #        QShortcut *shortcut = new QShortcut(QKeySequence("Ctrl+O"), parent);
 #        QObject::connect(shortcut, SIGNAL(activated()), receiver, SLOT(yourSlotHere()));
@@ -975,6 +947,24 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
         self.updateTree()
         self.list.sortByColumn(1, qt.Qt.AscendingOrder)
         self._setBeamlineSpecific(self.beamline)
+        self.plotWindow.destroyed.connect(self.handleDestroyed)
+    
+    def handleDestroyed(self):
+        print 'About to close() the widget'
+        if self.widget:
+            self.widget.close()
+
+    def closeEvent(self,event):
+        print 'Close event SortPlotsWidget'
+        self.ScanWindow.close()
+        qt.QWidget.closeEvent(self, event)
+#        event.ignore() # Window remains open
+
+    def showEvent(self, event):
+        print 'Show event SortPlotsWidget'
+        self.ScanWindow.show()
+        self.ScanWindow.activateWindow()
+        qt.QWidget.showEvent(self, event)
 
     def autoselect(self, option):
         '''
@@ -1070,10 +1060,11 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
             self.ScanWindow.show()
             self.ScanWindow.raise_()
         else:
+            # TODO: This block was never entered!
             self.ScanWindow = sw.ScanWindow()
+            self.notifyCloseEventToWidget(self.ScanWindow)
             self.ScanWindow.show()          
             self.ScanWindow.raise_()
-        (rs, nf, no) = self.checkBoxWidget.check()
         msel = self.selectionDict['m']
         psel = self.selectionDict['p']
         self.ScanWindow.performXMCD()
@@ -1101,10 +1092,14 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
         self.motorNamesList = [''] + self._getAllMotorNames()
         self.motorNamesList.sort()
         for cBox in self.cBoxList:
-            index = cBox.currentIndex()
+            motorName = cBox.currentText()
+            index = cBox.findText(motorName)
+            # index = -1, if motorName not found
+            index = 0 if index<0 else index
             cBox.clear()
             cBox.addItems(self.motorNamesList)
             cBox.setCurrentIndex(index)
+            print 'setCurrentIndex'
         self.updateTree()
 
     def updateTree(self):
@@ -1114,12 +1109,13 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
         for i in range(len(self.legendList)):
             legend = self.legendList[i]
             values = self.motorsList[i]
-            id = ''
-            for (k,v) in self.selectionDict.items():
+            selection = ''
+            for (id,v) in self.selectionDict.items():
                 if legend in v:
-                    id = k
+                    if id != 'd':
+                        selection = id
                     break
-            tmp = qt.QStringList([id, legend])
+            tmp = qt.QStringList([selection, legend])
             for m in mList:
                 if m == '':
                     tmp.append('')
@@ -1190,7 +1186,6 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
         options = [str(self.autoselectCBox.itemText(i))\
                    for i in range(self.autoselectCBox.count())]
         for (i, option) in enumerate(options):
-            print option, beamline
             if option.startswith(beamline):
                 self.autoselectCBox.setCurrentIndex(i)
                 self.autoselectCBox.activated[qt.QString].emit(option)

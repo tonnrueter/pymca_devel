@@ -2,25 +2,30 @@ try:
     from PyMca import Plugin1DBase
 except ImportError:
     from . import Plugin1DBase
-    
-try:
-    from PyMca import SortPlotsWindow
-except ImportError:
-    print("SortPlotsWindow importing from somewhere else")
-    import SortPlotsWindow
 
-from platform import node as gethostname
+try:
+    from PyMca.PyMcaSciPy.signal import medfilt1d
+except ImportError:
+    print("RemoveSpikesPlugin importing directly")
+    from PyMca.PyMcaSciPy.signal import medfilt1d
+
+import numpy
     
 DEBUG = True
-class SortPlots(Plugin1DBase.Plugin1DBase):
+class RemoveSpikes(Plugin1DBase.Plugin1DBase):
     def __init__(self,  plotWindow,  **kw):
         Plugin1DBase.Plugin1DBase.__init__(self,  plotWindow,  **kw)
         self.methodDict = {}
-        text = 'Sort plots for motor value.'
-        function = self.showSortPlotsWindow
+        text = 'Remove spikes from active curve'
+        function = self.removeSpikesActive
         icon = None
         info = text
-        self.methodDict["Sort plots"] =[function, info, icon]
+        self.methodDict["Remove spikes"] =[function, info, icon]
+        text = 'Remove spikes from all curve'
+        function = self.removeSpikesAll
+        icon = None
+        info = text
+        self.methodDict["Remove spikes"] =[function, info, icon]
         self.widget = None
     
     def getMethods(self, plottype=None):
@@ -38,32 +43,40 @@ class SortPlots(Plugin1DBase.Plugin1DBase):
         self.methodDict[name][0]()
         return
 
-    def showSortPlotsWindow(self):
-        if self.widget is None:
-            self._createWidget()
-        else:
-            self.widget.updatePlots()
-        self.widget.show()
-        self.widget.raise_()
+    def setThreshold(self):
+        # TODO: Spawn QDialog, ask for threshold % window width
+        pass
 
-    def _createWidget(self):
-        guess = gethostname().lower()
-        if guess.startswith('dragon'):
-            beamline = 'ID08'
+    def removeSpikesAll(self):
+        self.medianThresholdFilter(False)
+
+    def removeSpikesActive(self):
+        self.medianThresholdFilter(True)
+
+    def medianThresholdFilter(self, activeOnly, threshold=None, length=9):
+        if activeOnly:
+            active = self._plotWindow.getActiveCurve()
+            if not active:
+                return
         else:
-            beamline = '#default#'
-        if DEBUG:
-            print '_createWidget -- beamline = "%s"'%beamline
-        parent = None
-        self.widget = SortPlotsWindow.SortPlotsWidget(parent,
-                                                      self._plotWindow,
-                                                      beamline,
-                                                      nSelectors = 2)
+            spectra = self._plotWindow.getAllCurves()
+        for (i,spec) in enumerate(spectra):
+            x, y, legend, info = spec
+            filtered = medfilt1d(y, length)
+            diff = abs(filtered-y)
+            if not threshold:
+                threshold = .5 * diff.max() # OR: diff.mean()
+            ynew = numpy.where(diff>threshold, filtered, y)
+            legend = info.get('selectionlegend','') + ' SR'
+            if i==0 and (len(spectra)!=1):
+                self._plotWindow.addCurve(x,ynew,legend,info, replace=True)
+            else:
+                self._plotWindow.addCurve(x,ynew,legend,info)
         
 
-MENU_TEXT = "Sort Plots"
+MENU_TEXT = "Remove spikes"
 def getPlugin1DInstance(plotWindow,  **kw):
-    ob = SortPlots(plotWindow)
+    ob = RemoveSpikes(plotWindow)
     return ob
     
 if __name__ == "__main__":
@@ -90,4 +103,7 @@ if __name__ == "__main__":
     plugin = getPlugin1DInstance(sw)
     plugin.applyMethod(plugin.getMethods()[0])
     
+    sw.show()
+    
     app.exec_()
+    
