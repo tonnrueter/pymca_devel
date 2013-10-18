@@ -1,4 +1,7 @@
 import numpy, copy
+from PyMca import PyMcaDirs
+from os.path import splitext
+from os import linesep as newline
 from PyMca import PyMcaQt as qt
 from PyMca.PyMca_Icons import IconDict
 
@@ -61,146 +64,187 @@ class SortPlotsScanWindow(sw.ScanWindow):
         self.xmcd = None
         self.xas  = None
 
-    def setInterpolationXRange(self, xRangeList = None):
+    def interpXRange(self, equidistant=True, xRangeList=None):
         '''
+        Input
+        -----
+        fromCurves : Bool
+            Uses curves present in self.curvesDict
+            if set to true. If set to false, an
+            ndarray with equistant interpolation
+            points is returned
+        xRangeList : List
+            List of ndarray from whose overlap
+            is determined
+        
         Checks dataObjectsDictionary for curves
         present in the ScanWindow and tries to
         find the overlap in the x-range of these
-        curves. The x-ranges of the curves containing
+        curves.
+
+        If equidistant is True:
+        The x-ranges of the curves containing
         the minmal resp. the maximal x-value are
         used to determine the minimal number of 
         points (n) in their overlap in order to
         avoid oversampling.
         
+        If equidistant is False:
+        If an active curve in the plotWindow is
+        set, its xRange is used as interpolation 
+        points. If not active curve is set, the
+        first curve in the scan sequence is taken
+        
         Returns
         -------
         out : numpy array
-            Evenly spaced x-range between xmin and
+            (Evenly spaced) x-range between xmin and
             xmax containing n points
         '''
-        xmin, xmax = self.plotWindow.getGraphXLimits()
-        xRangeMin  = numpy.array([])
-        xRangeMax  = numpy.array([])
         if not xRangeList:
-            xRangeList = [v.x[0] for v in self.dataObjectsDict.values()]
-#        for (label, data) in self.dataObjectsDict.items():
-        for xRange in xRangeList:
-            mask = numpy.argsort(xRange)
-            x    = numpy.take(xRange)
+            xRangeList = [v.x[0] for v in self.curvesDict.values()]
+        if not len(xRangeList):
+            # Nothing to do..
+            print 'Nothing to do'
+            return None
+            
+        num = 0
+        xmin, xmax = self.plotWindow.getGraphXLimits()
+        for x in xRangeList:
             if x.min() > xmin:
                 xmin = x.min()
-                xRangeMin = x
                 if DEBUG:
                     print 'New minimum: ', xmin
             if x.max() < xmax:
                 xmax = x.max()
-                xRangeMax = x
                 if DEBUG:
                     print 'New maximum: ', xmax
-        # Determine number of points in between
-        numMin = numpy.nonzero((xRangeMin >= xmin) & 
-                               (xRangeMin <= xmax))[0].size
-        numMax = numpy.nonzero((xRangeMax >= xmin) &
-                               (xRangeMax <= xmax))[0].size
-        num = numMin if numMin < numMax else numMax
+        
+        if xmin >= xmax:
+            # TODO: Somekind of Error..
+            pass
+        if equidistant:
+            for x in xRangeList:
+                curr = numpy.nonzero((x >= xmin) & 
+                                     (x <= xmax))[0].size
+                num = curr if curr>num else num
+            # Exclude first and last point
+            out = numpy.linspace(xmin, xmax, num, endpoint=False)[1:]
+        else:
+            active = self.plotWindow.graph.getActiveCurve(just_legend=True)
+            if active:
+                curve = self.plotWindow.dataObjectsDict[active]
+                if DEBUG:
+                    print 'interpXRange -- Active curve is \'%s\''%active
+            else:
+                first = sorted(self.curvesDict.keys())[0]
+                if DEBUG:
+                    print 'interpXRange -- No active curve,',
+                    print 'proceed with \'%s\' as first'%first
+                curve = self.plotWindow.dataObjectsDict[first]
+            x = curve.x[0]
+            mask = numpy.nonzero((x >= xmin) &
+                                 (x <= xmax))[0]
+            out = numpy.sort(numpy.take(x, mask))
         if DEBUG:
-            print 'setXRange -- Resulting xrange:'
-            print '\tmin = ', xmin
-            print '\tmax = ', xmax
-            print '\tnum = ', num
-        out = numpy.linspace(xmin, xmax, num)
+            print 'interpXRange -- Resulting xrange:'
+            print '\tmin = ', out.min()
+            print '\tmax = ', out.max()
+            print '\tnum = ', len(out)
         return out
 
     def processSelection(self, msel, psel):
-        self.xmcdCheck = (None, None, None, None)
-        self.selectionDict['m'] = msel[:]
-        self.selectionDict['p'] = psel[:]
-        self.curvesDict = self.prepareCurves(msel + psel)
         all = self.getAllCurves(just_legend=True)
         self.removeCurves(all)
-        self.performAverage()
-        self.performXMCD()
-        self.graph.checky2scale()
-        self.graph.checky1scale()
-        return
+        self.avgP, self.avgM = None, None
+        
+        self.selectionDict['m'] = msel[:]
+        self.selectionDict['p'] = psel[:]
+        if DEBUG:
+            print 'm: ', self.selectionDict['m']
+            print 'p: ', self.selectionDict['p']
+        self.curvesDict = self.copyCurves(msel + psel)
+        
+        if (len(self.curvesDict) == 0) or\
+           ((len(self.selectionDict['m']) == 0) and\
+           (len(self.selectionDict['p']) == 0)):
+            # Nothing to do
+            return
 
-    def prepareCurves(self, selection,
-                   remove_spikes = False,
-                   noise_filter  = False,
-                   normalize     = False):
+        xRange = self.interpXRange(equidistant=True) # TODO: Make equidistant optional
+        activeLegend = self.plotWindow.graph.getActiveCurve(justlegend=True)
+        if (not activeLegend) or (activeLegend not in self.curvesDict.keys()):
+            # Use first curve in the series as xrange
+            activeLegend = sorted(self.curvesDict.keys())[0]
+        active = self.curvesDict[activeLegend]
+        xlabel, ylabel = self.extractLabels(active.info)
+        
+        # Calculate averages and add them to the plot
+        for id in ['p','m']:
+            sel = self.selectionDict[id]
+            if not len(sel):
+                continue
+            xvalList = []
+            yvalList = []
+            for legend in sel:
+                tmp = self.curvesDict[legend]
+                xvalList.append(tmp.x[0])
+                yvalList.append(tmp.y[0])
+            avg_x, avg_y = self.specAverage(xvalList,
+                                            yvalList,
+                                            xRange)
+            avgName = 'avg_' + id
+#            print 'id  :', id
+#            print 'xrng:', xRange
+#            print 'xVal:', xvalList
+#            print 'yVal:', yvalList
+#            print 'avgx:', avg_x
+#            print 'avgy:', avg_y
+            self.newCurve(avg_x,
+                          avg_y,
+                          avgName,
+                          xlabel,
+                          ylabel)
+            if id == 'p':
+                self.avgP = self.dataObjectsList[-1]
+            if id == 'm':
+                self.avgM = self.dataObjectsList[-1]
+            
+        if (self.avgM and self.avgP):
+            # TODO: if self.showXMCD() ...
+            self.performXMCD()
+            # TODO: if self.showXAS() ...
+            self.performXAS()
+
+    def copyCurves(self, selection):
         '''
         selection : List
             Contains names of curves to be processed
-
-        The xranges of the curves are clipped according
-        to the zoomed in region in the parent plotWindow.
-        Various preprocessor can be applied:
-            - Denoise/Smoothing
-            - Spike removal
-            - Normalization
-            
+    
         Returns
         -------
         out : Dictionary
             Contains legends as keys and dataObjects
             as values.
         '''
+        if not len(selection):
+            return {}
         out = {}
-#        pwX1min, pwX1max = self.plotWindow.graph.getX1AxisLimits()
-        pwX1min, pwX1max = self.plotWindow.getGraphXLimits()
         for legend in selection:
-#            if legend not in self.curvesDict.keys():
             tmp = self.plotWindow.dataObjectsDict.get(legend, None)
-            if tmp is None:
+            if tmp:
+                out[legend] = copy.deepcopy(tmp)
+            else:
                 # TODO: Errorhandling, curve not found
-                print "prepareCurves -- Retrieved none type curve"
+                if DEBUG:
+                    print "copyCurves -- Retrieved none type curve"
                 continue
-            tmp = copy.deepcopy(tmp)
-            xVal = tmp.x[0]
-            yVal = tmp.y[0]
-            if (xVal[0] < pwX1min) or (xVal[-1] > pwX1max):
-                # Clip image to zoomed in Values
-                mask = numpy.nonzero((xVal > pwX1min) &
-                                     (xVal < pwX1max))[0]
-                xVal = numpy.take(xVal,  mask)
-                yVal = numpy.take(yVal,  mask)
-            if remove_spikes:
-                yVal = self.spikeRemoval(yVal)
-            if noise_filter:
-                # Savitzky Golay smoothing
-                # instead of Wiener filter
-                # TODO: Requires equidistant x-values
-                yVal = getSavitzkyGolay(yVal)
-            if normalize:
-                yVal = self.normalize(xVal, yVal)
-            tmp.x[0] = xVal
-            tmp.y[0] = yVal
-            out[legend] = tmp
         if DEBUG:
-            print 'prepareCurves -- finished'
-        # Sort before returning
-#        return sorted(out, key=lambda dataObject: dataObject.info['selectionlegend'])
+            for c in out.values():
+                x = c.x[0]
+                print '\tmin:',x.min(),'\tmax:',x.max()
         return out
 
-    def normalize(self,  x, y):
-        '''
-        x : Numpy array 
-            Contains x-Values
-        y : Numpy array 
-            Contains y Values
-
-        Returns
-        -------
-        ynorm : Numpy array
-            Spectrum normalized by its integral
-        '''
-        # Check for non-zero values?
-        ynorm = y - numpy.min(y)
-        ymax  = numpy.trapz(ynorm,  x)
-        ynorm /= ymax
-        return ynorm
-
-    
     def specAverage(self, xarr, yarr, xrange=None):
         '''
         xarr : list
@@ -208,7 +252,8 @@ class SortPlotsScanWindow(sw.ScanWindow):
         yarr : list
             List containing y-Values in 1-D numpy arrays
         xrange : Numpy array
-            x-Values used for interpolation
+            x-Values used for interpolation. Must overlap
+            with all arrays in xarr
 
         From the spectra given in xarr & yarr, the method
         determines the overlap in the x-range. For spectra
@@ -229,7 +274,10 @@ class SortPlotsScanWindow(sw.ScanWindow):
             return None, None 
 
         same = True
-        x0 = xarr[0]
+        if xrange == None:
+            x0 = xarr[0]
+        else:
+            x0 = xrange
         for x in xarr:
             if len(x0) == len(x):
                 if numpy.all(x0 == x):
@@ -239,7 +287,7 @@ class SortPlotsScanWindow(sw.ScanWindow):
                     break
             else:
                 same = False
-                break    
+                break
 
         if DEBUG:
             print 'specAverage -- same = ', same
@@ -257,9 +305,13 @@ class SortPlotsScanWindow(sw.ScanWindow):
                 xsort.append(x.take(mask))
                 ysort.append(y.take(mask))
 
-        xmin0 = xsort[0][0]
-        xmax0 = xsort[0][-1]
-        if not same:
+        if xrange != None:
+            xmin0 = xrange.min()
+            xmax0 = xrange.max()
+        else:
+            xmin0 = xsort[0][0]
+            xmax0 = xsort[0][-1]
+        if (not same) or (xrange == None):
             # Determine global xmin0 & xmax0
             for x in xsort:
                 xmin = x.min()
@@ -267,11 +319,11 @@ class SortPlotsScanWindow(sw.ScanWindow):
                 if xmin > xmin0:
                     xmin0 = xmin
                     if DEBUG:
-                        print 'New xmin0: ', xmin0
+                        print 'specAverage -- New xmin0: ', xmin0
                 if xmax < xmax0:
                     xmax0 = xmax
                     if DEBUG:
-                        print 'New xmax0: ', xmax0
+                        print 'specAverage -- New xmax0: ', xmax0
             if xmax <= xmin:
                 print 'No overlap between spectra!'
                 return numpy.array([]), numpy.array([])
@@ -334,11 +386,11 @@ class SortPlotsScanWindow(sw.ScanWindow):
         else:
             if DEBUG:
                 print 'performXAS -- Data not found: '
-                print '\tavg_m = ', avg_m
-                print '\tavg_p = ', avg_p
+                print '\tavg_m = ', self.avgM
+                print '\tavg_p = ', self.avgP
             return
         if numpy.all( m.x[0] == p.x[0] ):
-            avg = .5*(p.y[0] - m.y[0])
+            avg = .5*(p.y[0] + m.y[0])
         else:
             if DEBUG:
                 print 'performXAS -- x ranges are not the same! ',
@@ -391,105 +443,38 @@ class SortPlotsScanWindow(sw.ScanWindow):
         self._zoomReset()
         self.xmcd = self.dataObjectsList[-1]
 
-    def performAverage(self):
-        '''
-        Function to perform XMCD Anlysis before plotting
-        '''
-        self.avgP, self.avgM = None, None
-        if DEBUG:
-            print 'm: ', self.selectionDict['m']
-            print 'p: ', self.selectionDict['p']
-        if (len(self.curvesDict) == 0) and\
-           (len(self.selectionDict['m']) == 0) and\
-           (len(self.selectionDict['p']) == 0):
-            # Nothing to do
+    def _saveIconSignal(self):
+        saveDir = PyMcaDirs.outputDir
+        filter = 'CSV Files (*.csv);;Any File (*.*)'
+        # TODO: QFileDialog.getSaveFileName returns
+        # filename w/o extension!
+        filename = qt.QFileDialog.getSaveFileName(self,
+                                                'Save XMCD Analysis',
+                                                saveDir,
+                                                filter)
+        filename = str(filename)
+#        if not len(filename):
+#            raise IOError('Invalid filename')
+        if not len(splitext(filename)[1]):
+            # Add '.csv' or some extension
+            pass
+        # Get all values shown. Possible ways:
+        # - Loop through dataObjectsDict
+        # - Access avgM, avgP, XMCD and XAS directly
+        try:
+            filehandle = open(filename, 'w')
+        except IOError:
+            msg = qt.QMessageBox(text="Unable to write to '%s'"%filename)
             return
-        activeLegend = self.plotWindow.getActiveCurve(just_legend=True)
-#        activeLegend = self.plotWindow.graph.getActiveCurve(justlegend=True)
-        if (not activeLegend) or (activeLegend not in self.curvesDict.keys()):
-            # Use first curve in the series as xrange
-            activeLegend = sorted(self.curvesDict.keys())[0]
-        
-        active = self.curvesDict[activeLegend]
-        xRange = active.x[0]
-        xlabel, ylabel = self.extractLabels(active.info)
-
-        p_xvalList, p_yvalList = [], []
-        m_yvalList, m_xvalList = [], []
-
-#        p_xvalList = [self.curvesDict[legend].x[0] for legend in active.info['p']]
-        for legend in self.selectionDict['p']:
-            tmp = self.curvesDict[legend]
-            p_xvalList.append(tmp.x[0])
-            p_yvalList.append(tmp.y[0])
-
-        for legend in self.selectionDict['m']:
-            tmp = self.curvesDict[legend]
-            m_xvalList.append(tmp.x[0])
-            m_yvalList.append(tmp.y[0])
-
-        # Clip x-data range
-        xRanges = [data.x[0] for data in self.curvesDict.values()]
-        xMin = sorted([numpy.min(x) for x in xRanges])
-        xMax = sorted([numpy.max(x) for x in xRanges])
-        mask = numpy.nonzero((xRange>=xMin[-1]) & 
-                             (xRange<=xMax[0]))[0]
-        xRange = numpy.take(xRange, mask)
-        
-        if DEBUG:
-            print 'performXMCD -- xRange determined:'
-            print '\tx_min = ', xMin
-            print '\tx_max = ', xMax
-        
-        avg_p, avg_m = None, None
-        if len(p_xvalList) != 0:
-            avg_p_x, avg_p_y = self.specAverage(p_xvalList,
-                                                p_yvalList,
-                                                xRange)
-            self.newCurve(avg_p_x,
-                          avg_p_y,
-                          'avg_p',
-                          xlabel,
-                          ylabel)
-            self.avgP = self.dataObjectsList[-1]
-        if len(m_xvalList) != 0:
-            avg_m_x, avg_m_y = self.specAverage(m_xvalList,
-                                                m_yvalList,
-                                                xRange)
-            self.newCurve(avg_m_x,
-                          avg_m_y,
-                          'avg_m',
-                          xlabel,
-                          ylabel)
-            self.avgM = self.dataObjectsList[-1]
-    
-    def calcXAS(self, remove=False):
-        if remove:
-            for (k,v) in self.dataObjectsDict.items():
-                if k.startswith('XAS'):
-                    self.removeCurve(k)
-            return
-        avg_m, avg_p = None, None
-        for (k,v) in self.dataObjectsDict.items():
-            if k.startswith('avg_m'):
-                avg_m = v
-            if k.startswith('avg_p'):
-                avg_p = v
-        if avg_m and avg_p:
-            x_m, y_m = avg_m.x[0], avg_m.y[0]
-            x_p, y_p = avg_p.x[0], avg_p.y[0]
-            if not numpy.all(x_m == x_p):
-                # TODO: XAS Error handling
-                return
-            else:
-                xlabel, ylabel = self.extractLabels(avg_m.info)
-                xas = .5 * (y_m + y_p)
-                xasLegend = 'XAS'
-                self.newCurve(x_m,
-                              xas,
-                              xasLegend,
-                              xlabel,
-                              ylabel)
+        curves = self.dataObjectsDict.values()
+        yVals = [curve.y[0] for curve in curves]
+        xVals = [curves[0].x[0]]
+        outArray = numpy.vstack([xVals, yVals]).T
+        # Optional: Use numpy.savetxt
+        for line in outArray:
+            tmp = ','.join([str(num) for num in line])
+            filehandle.write(tmp + newline)
+        filehandle.close()
     
     def noiseFilter(self, y):
         size  = asarray([3] * len(y.shape))
@@ -761,8 +746,6 @@ class SortPlotsTreeWidget(qt.QTreeWidget):
         else:
             root = self.invisibleRootItem()
             sel = [root.child(i) for i in range(root.childCount())]
-        if DEBUG:
-            print sel[0]
         # Ensure alphabetically ordered list
         self.sortItems(1, qt.Qt.AscendingOrder)
         if not seq:
@@ -798,7 +781,6 @@ class SortPlotsTreeWidget(qt.QTreeWidget):
         '''
         Empties the id column for the selected rows.
         '''
-        print 'clearSelection -- selectionOnly = ', selectionOnly
         if selectionOnly:
             sel = self.selectedItems()
         else:
@@ -832,8 +814,7 @@ class SortPlotsTreeWidget(qt.QTreeWidget):
 
 class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
 
-    actionListModifiedSignal = qt.pyqtSignal()
-    setSelectionSignal       = qt.pyqtSignal(object, object)
+    setSelectionSignal = qt.pyqtSignal(object, object)
 
     def __init__(self,  parent,
                         plotWindow,
@@ -909,8 +890,9 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
                ('Invert selection', self.list.invertSelection), 
                ('Remove curve(s)', self.removeCurve_)])
         self.list.setContextMenu(listContextMenu)
-
-        mainLayout = qt.QGridLayout(self)
+        
+        self.splitter = qt.QSplitter(qt.Qt.Horizontal, self)
+        mainLayout = qt.QGridLayout(None)
         cBoxLayout = qt.QHBoxLayout(None)
         topLayout  = qt.QHBoxLayout(None)
         mainLayout.setContentsMargins(1, 1, 1, 1)
@@ -918,7 +900,12 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
         mainLayout.addLayout(cBoxLayout, 2, 0)
         mainLayout.addWidget(self.list, 1, 0)
         mainLayout.addLayout(topLayout, 0, 0)
-
+        leftWidget = qt.QWidget(self)
+        leftWidget.setLayout(mainLayout)
+        self.splitter.addWidget(leftWidget)
+        self.splitter.addWidget(self.ScanWindow)
+        self.splitter.setSizes([leftWidget.minimumSize(),self.list.size()])
+        
         self.autoselectCBox = qt.QComboBox(self)
         self.autoselectCBox.addItems(
                         ['Select Experiment',
@@ -939,33 +926,12 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
         buttonUpdate.clicked.connect(self.updatePlots)
         self.list.selectionModifiedSignal.connect(self.updateSelectionDict)
         self.setSelectionSignal.connect(self.ScanWindow.processSelection)
-#        self.ScanWindow.show()
-        #TODO : Shortcuts
-#        QShortcut *shortcut = new QShortcut(QKeySequence("Ctrl+O"), parent);
-#        QObject::connect(shortcut, SIGNAL(activated()), receiver, SLOT(yourSlotHere()));
-        self.setLayout(mainLayout)
+
+#        self.setLayout(mainLayout)
         self.updateTree()
         self.list.sortByColumn(1, qt.Qt.AscendingOrder)
         self._setBeamlineSpecific(self.beamline)
-        self.plotWindow.destroyed.connect(self.handleDestroyed)
     
-    def handleDestroyed(self):
-        print 'About to close() the widget'
-        if self.widget:
-            self.widget.close()
-
-    def closeEvent(self,event):
-        print 'Close event SortPlotsWidget'
-        self.ScanWindow.close()
-        qt.QWidget.closeEvent(self, event)
-#        event.ignore() # Window remains open
-
-    def showEvent(self, event):
-        print 'Show event SortPlotsWidget'
-        self.ScanWindow.show()
-        self.ScanWindow.activateWindow()
-        qt.QWidget.showEvent(self, event)
-
     def autoselect(self, option):
         '''
         Beamline-specific experiments rely on specific
@@ -1053,21 +1019,14 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
             raise ValueError('"%s" not in motors'%motor)
 
     def triggerXMCD(self):
-        if DEBUG:
-            print 'triggerXMCD -- seletionDict: ',
-            print self.selectionDict
         if self.ScanWindow:
+            # TODO: Delete me
             self.ScanWindow.show()
-            self.ScanWindow.raise_()
-        else:
-            # TODO: This block was never entered!
-            self.ScanWindow = sw.ScanWindow()
-            self.notifyCloseEventToWidget(self.ScanWindow)
-            self.ScanWindow.show()          
             self.ScanWindow.raise_()
         msel = self.selectionDict['m']
         psel = self.selectionDict['p']
-        self.ScanWindow.performXMCD()
+#        self.ScanWindow.performXMCD()
+        self.ScanWindow.processSelection(msel, psel)
 
     def removeCurve_(self):
         sel = self.list.getColumn(1, True, str)
@@ -1075,6 +1034,7 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
             print 'removeCurve_ -- selection:\n\t',
             print '\n\t'.join(sel)
         self.plotWindow.removeCurves(sel)
+        # TODO: also remove in ScanWindow
         self.updatePlots()
 
     def updateSelectionDict(self):
@@ -1099,8 +1059,16 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
             cBox.clear()
             cBox.addItems(self.motorNamesList)
             cBox.setCurrentIndex(index)
-            print 'setCurrentIndex'
         self.updateTree()
+        # TODO: Determine x ranges in plotWindow
+#        if plotWindow.isZoomed
+        
+        # in order to check if they have changed
+        experiment = str(self.autoselectCBox.currentText())
+        if experiment != 'Select Experiment':
+            # Unable to open 
+            self.autoselect(experiment)
+        
 
     def updateTree(self):
         mList  = [ str(cBox.currentText()) for cBox in self.cBoxList ]
