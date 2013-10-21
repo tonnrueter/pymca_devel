@@ -1,16 +1,178 @@
 import numpy, copy
 from PyMca import PyMcaDirs
+from PyMca import ConfigDict
 from os.path import splitext
 from os import linesep as newline
 from PyMca import PyMcaQt as qt
 from PyMca.PyMca_Icons import IconDict
 
-from PyMca import CloseEventNotifyingWidget
 from PyMca import ScanWindow as sw
 
 DEBUG = True
 if DEBUG:
     numpy.set_printoptions(threshold=50)
+
+class XMCDOptions(qt.QDialog):
+    
+    xmcdSetOptionsSignal = qt.pyqtSignal(object)
+    
+    def __init__(self, parent):
+        qt.QDialog.__init__(self, parent)
+        self.setWindowTitle('XMCD Options')
+        self.setModal(True)
+
+        # Buttons
+        buttonOK = qt.QPushButton('OK')
+        buttonCancel = qt.QPushButton('Cancel')
+        buttonSave = qt.QPushButton('Save')
+        buttonLoad = qt.QPushButton('Load')
+
+        # OptionLists and ButtonGroups
+        # GroupBox can be generated from self.getGroupBox
+        normOpts = ['No &normalization',
+                    'Normalize &after average',
+                    'Normalize &before average']
+        xrangeOpts = ['&First curve in sequence',
+                      'Active &curve',
+                      '&Use equidistant x-range']
+        # ButtonGroups
+        self.normBG = qt.QButtonGroup(self)
+        self.xrangeBG = qt.QButtonGroup(self)
+        self.optsDict = {
+            'normalization' : self.normBG,
+            'xrange' : self.xrangeBG
+        }
+        
+        # Layouts
+        mainLayout = qt.QGridLayout(None)
+        buttonLayout = qt.QHBoxLayout(None)
+        buttonLayout.addWidget(buttonSave)
+        buttonLayout.addWidget(buttonLoad)
+        buttonLayout.addWidget(qt.HorizontalSpacer())
+        buttonLayout.addWidget(buttonOK)
+        buttonLayout.addWidget(buttonCancel)
+        mainLayout.addWidget(self.getGroupBox('Normalization', normOpts, self.normBG),0,0)
+        mainLayout.addWidget(self.getGroupBox('Interpolation x-range', xrangeOpts, self.xrangeBG),1,0)
+        mainLayout.addLayout(buttonLayout,2,0)
+        self.setLayout(mainLayout)
+        
+        # Connects
+        buttonOK.clicked.connect(self.accept)
+        buttonCancel.clicked.connect(self.close)
+        buttonSave.clicked.connect(self.saveOptions)
+        buttonLoad.clicked.connect(self.loadOptions)
+#        self.normBG.buttonClicked['int'].connect(self.optionChanged)
+#        self.xrangeBG.buttonClicked['int'].connect(self.optionChanged)
+        
+    def getGroupBox(self, title, optionList, buttongroup=None):
+        '''
+        title : string
+        optionList : List of strings
+        buttongroup : qt.QButtonGroup
+        
+        Returns
+        -------
+        GroupBox of QRadioButtons build from a
+        given optionList. If buttongroup is 
+        specified, the buttons are organized in
+        a QButtonGroup.
+        '''
+        first = True
+        normGroup = qt.QGroupBox(title, None)
+        gbLayout = qt.QVBoxLayout(None)
+        gbLayout.addStretch(1)
+        print 'ButtonGroup = ', buttongroup
+        for (id, radioText) in enumerate(optionList):
+            radio = qt.QRadioButton(radioText)
+            gbLayout.addWidget(radio)
+            if buttongroup:
+                buttongroup.addButton(radio, id)
+            if first:
+                radio.setChecked(True)
+                first = False
+        normGroup.setLayout(gbLayout)
+        return normGroup
+        
+    def optionChanged(self, val):
+        print 'Changed! val = ', val
+        
+    def saveOptions(self):
+        if DEBUG:
+            print 'Save clicked'
+        saveDir = PyMcaDirs.outputDir
+        filter = 'PyMca (*.cfg)'
+        filename = qt.QFileDialog.\
+                    getSaveFileName(self,
+                                    'Save XMCD Analysis Configuration',
+                                    saveDir,
+                                    filter)
+        if not str(filename).endswith('.cfg'):
+            filename += '.cfg'
+        confDict = ConfigDict.ConfigDict()
+        tmp = {}
+        for key in self.optsDict.keys():
+            tmp[key] = self.optsDict[key].checkedId()
+        confDict['XMCDOptions'] = tmp
+        try:
+            confDict.write(filename)
+        except IOError:
+            msg = qt.QMessageBox()
+            msg.setWindowTitle('XMCD Options Error')
+            msg.setText('Unable to write configuration to \'%s\''%filename)
+            msg.exec_()
+
+    def loadOptions(self):
+        if DEBUG:
+            print 'Load configuration clicked'
+        openDir = PyMcaDirs.outputDir
+        filter = 'PyMca (*.cfg)'
+        filename = qt.QFileDialog.\
+                    getOpenFileName(self,
+                                    'Load XMCD Analysis Configuration',
+                                    openDir,
+                                    filter)
+        confDict = ConfigDict.ConfigDict()
+        try:
+            confDict.read(filename)
+        except IOError:
+            msg = qt.QMessageBox()
+            msg.setTitle('XMCD Options Error')
+            msg.setText('Unable to read configuration file \'%s\''%filename)
+            return
+        if (not 'XMCDOptions' in confDict):
+            return
+        for option in confDict['XMCDOptions'].keys():
+            if option in self.optsDict:
+                try:
+                    id = int(confDict['XMCDOptions'][option])
+                except ValueError:
+                    if DEBUG:
+                        print 'loadOptions -- int conversion failed:',
+                        print 'Invalid value for option \'%s\''%option
+                        continue
+                    else:
+                        msg = qt.QMessageBox()
+                        msg.setWindowTitle('XMCD Options Error')
+                        msg.setText('Configuration file \'%s\' corruted'%filename)
+                        msg.exec_()
+                        return
+                button = self.optsDict[option].button(id)
+                if type(button) == type(qt.QRadioButton()):
+                    button.setChecked(True)
+
+    def getOptions(self):
+        ddict = {}
+        for (option, buttongroup) in self.optsDict.items():
+            ddict[option] = buttongroup.checkedId()
+        return ddict
+        
+    def emitXmcdSetOptionsSignal(self):
+        ddict = {}
+        for (key, buttongroup) in self.optsDict.items():
+            ddict[key] = buttongroup.checkedId()
+        self.xmcdSetOptionsSignal.emit(ddict)
+        if DEBUG:
+            print ddict
 
 class SortPlotsScanWindow(sw.ScanWindow):
 
@@ -55,14 +217,69 @@ class SortPlotsScanWindow(sw.ScanWindow):
         # Copy spectra from origin
         self.selectionDict = {'m':[], 'p':[]}
         self.curvesDict = {}
-        self.xmcdCheck = (None, None, None, None)
-
+        self.optsDict = {
+            'normAfterAvg'  : False,
+            'normBeforeAvg' : False,
+            'useActive'     : False,
+            'equidistant'   : False
+        }
         self.xRange = None
         # Keep track of Averages, XMCD and XAS curves
         self.avgM = None
         self.avgP = None
         self.xmcd = None
         self.xas  = None
+
+    def processOptions(self, options):
+        tmp = {}
+        xrange = options['xrange']
+        normalization = options['normalization']
+        if xrange == 1:
+            tmp['equidistant'] = False
+            tmp['useActive']   = True
+        elif xrange == 2:
+            tmp['equidistant'] = True
+            tmp['useActive']   = False
+        else:
+            tmp['equidistant'] = False
+            tmp['useActive']   = False
+        if normalization == 1:
+            tmp['normAfterAvg']  = True
+            tmp['normBeforeAvg'] = False
+        elif normalization == 2:
+            tmp['normAfterAvg']  = False
+            tmp['normBeforeAvg'] = True
+        else:
+            tmp['normAfterAvg']  = False
+            tmp['normBeforeAvg'] = False
+
+        # Trigger reclaculation
+        if self.optsDict != tmp:
+            self.optsDict = tmp
+            msel = self.selectionDict['m']
+            psel = self.selectionDict['p']
+            if DEBUG:
+                print 'processOptions -- options changed:'
+                print '\toptsDict: ', self.optsDict
+            self.processSelection(msel, psel)
+
+    def normalization(self,  x, y):
+        '''
+        x : Numpy array 
+            Contains x-Values
+        y : Numpy array 
+            Contains y Values
+
+        Returns
+        -------
+        ynorm : Numpy array
+            Spectrum normalized by its integral
+        '''
+        # Check for non-zero values?
+        ynorm = y - numpy.min(y)
+        ymax  = numpy.trapz(ynorm,  x)
+        ynorm /= ymax
+        return ynorm
 
     def interpXRange(self, equidistant=True, xRangeList=None):
         '''
@@ -74,7 +291,7 @@ class SortPlotsScanWindow(sw.ScanWindow):
             ndarray with equistant interpolation
             points is returned
         xRangeList : List
-            List of ndarray from whose overlap
+            List of ndarray from whose the overlap
             is determined
         
         Checks dataObjectsDictionary for curves
@@ -131,9 +348,9 @@ class SortPlotsScanWindow(sw.ScanWindow):
             # Exclude first and last point
             out = numpy.linspace(xmin, xmax, num, endpoint=False)[1:]
         else:
-            active = self.plotWindow.graph.getActiveCurve(just_legend=True)
-            if active:
-                curve = self.plotWindow.dataObjectsDict[active]
+            active = self.plotWindow.getActiveCurve(just_legend=True)
+            if self.optsDict['useActive'] and active:
+                curve = self.plotWindow.dataObjectsDict[active]                    
                 if DEBUG:
                     print 'interpXRange -- Active curve is \'%s\''%active
             else:
@@ -171,7 +388,7 @@ class SortPlotsScanWindow(sw.ScanWindow):
             # Nothing to do
             return
 
-        xRange = self.interpXRange(equidistant=True) # TODO: Make equidistant optional
+        xRange = self.interpXRange(self.optsDict['equidistant'])
         activeLegend = self.plotWindow.graph.getActiveCurve(justlegend=True)
         if (not activeLegend) or (activeLegend not in self.curvesDict.keys()):
             # Use first curve in the series as xrange
@@ -188,18 +405,20 @@ class SortPlotsScanWindow(sw.ScanWindow):
             yvalList = []
             for legend in sel:
                 tmp = self.curvesDict[legend]
-                xvalList.append(tmp.x[0])
-                yvalList.append(tmp.y[0])
+                if self.optsDict['normBeforeAvg']:
+                    xVals = tmp.x[0]
+                    yVals = self.normalization(xVals, tmp.y[0])
+                else:
+                    xVals = tmp.x[0]
+                    yVals = tmp.y[0]
+                xvalList.append(xVals)
+                yvalList.append(yVals)
             avg_x, avg_y = self.specAverage(xvalList,
                                             yvalList,
                                             xRange)
+            if self.optsDict['normAfterAvg']:
+                avg_y = self.normalization(avg_x, avg_y)
             avgName = 'avg_' + id
-#            print 'id  :', id
-#            print 'xrng:', xRange
-#            print 'xVal:', xvalList
-#            print 'yVal:', yvalList
-#            print 'avgx:', avg_x
-#            print 'avgy:', avg_y
             self.newCurve(avg_x,
                           avg_y,
                           avgName,
@@ -465,6 +684,7 @@ class SortPlotsScanWindow(sw.ScanWindow):
             filehandle = open(filename, 'w')
         except IOError:
             msg = qt.QMessageBox(text="Unable to write to '%s'"%filename)
+            msg.exec_()
             return
         curves = self.dataObjectsDict.values()
         yVals = [curve.y[0] for curve in curves]
@@ -812,9 +1032,10 @@ class SortPlotsTreeWidget(qt.QTreeWidget):
         return out
 
 
-class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
+class SortPlotsWidget(qt.QWidget):
 
     setSelectionSignal = qt.pyqtSignal(object, object)
+    setOptionsSignal   = qt.pyqtSignal(object)
 
     def __init__(self,  parent,
                         plotWindow,
@@ -839,8 +1060,7 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
              ...,
              {'MotorName2':MotorValue2, ... , 'MotorNameM':MotorValueM}]
         """
-        CloseEventNotifyingWidget.\
-            CloseEventNotifyingWidget.__init__(self,  parent)
+        qt.QWidget.__init__(self, parent)
         self.plotWindow = plotWindow
         self.legendList = []
         self.motorsList = []
@@ -852,9 +1072,8 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
         self.cBoxList = []
         self.ScanWindow = SortPlotsScanWindow(origin=plotWindow, 
                                               parent=None)
+        self.optsWindow = XMCDOptions(self)
                                               
-        self.notifyCloseEventToWidget(self)
-        self.notifyCloseEventToWidget(self.ScanWindow)
         self.selectionDict = {'d': [],
                               'p': [],
                               'm': []}
@@ -863,8 +1082,9 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
                            qt.QSizePolicy.Expanding)
 
         self.setWindowTitle("Sort Plots Window")
-        updatePixmap = qt.QPixmap(IconDict["reload"])
-        buttonUpdate = qt.QPushButton(qt.QIcon(updatePixmap), '', self)
+        updatePixmap  = qt.QPixmap(IconDict["reload"])
+        buttonUpdate  = qt.QPushButton(qt.QIcon(updatePixmap), '', self)
+        buttonOptions = qt.QPushButton('Options', self)
         for i in range(nSelectors):
             cBox = qt.QComboBox(self)
             cBox.addItems(self.motorNamesList)
@@ -890,47 +1110,58 @@ class SortPlotsWidget(CloseEventNotifyingWidget.CloseEventNotifyingWidget):
                ('Invert selection', self.list.invertSelection), 
                ('Remove curve(s)', self.removeCurve_)])
         self.list.setContextMenu(listContextMenu)
-        
-        self.splitter = qt.QSplitter(qt.Qt.Horizontal, self)
-        mainLayout = qt.QGridLayout(None)
-        cBoxLayout = qt.QHBoxLayout(None)
-        topLayout  = qt.QHBoxLayout(None)
-        mainLayout.setContentsMargins(1, 1, 1, 1)
-        mainLayout.setSpacing(2)
-        mainLayout.addLayout(cBoxLayout, 2, 0)
-        mainLayout.addWidget(self.list, 1, 0)
-        mainLayout.addLayout(topLayout, 0, 0)
-        leftWidget = qt.QWidget(self)
-        leftWidget.setLayout(mainLayout)
-        self.splitter.addWidget(leftWidget)
-        self.splitter.addWidget(self.ScanWindow)
-        self.splitter.setSizes([leftWidget.minimumSize(),self.list.size()])
-        
         self.autoselectCBox = qt.QComboBox(self)
         self.autoselectCBox.addItems(
                         ['Select Experiment',
                          'ID08: Linear Dichorism',
                          'ID08: XMCD'])
-        self.autoselectCBox.activated['QString'].connect(self.autoselect)
         
-        topLayout.addWidget(buttonUpdate)
-        topLayout.addWidget(qt.HorizontalSpacer(self))
-        topLayout.addWidget(self.autoselectCBox)
-        
+        self.splitter = qt.QSplitter(qt.Qt.Horizontal, self)
+        cBoxLayout = qt.QHBoxLayout(None)
+        topLayout  = qt.QHBoxLayout(None)
+        leftLayout = qt.QGridLayout(None)
         cBoxLayout.addWidget(qt.HorizontalSpacer(self))
         cBoxLayout.addWidget(
                 qt.QLabel('Selected motor(s):',  self))
         for cBox in self.cBoxList:
-            cBoxLayout.addWidget(cBox)   
+            cBoxLayout.addWidget(cBox) 
+        topLayout.addWidget(buttonUpdate)
+        topLayout.addWidget(buttonOptions)
+        topLayout.addWidget(qt.HorizontalSpacer(self))
+        topLayout.addWidget(self.autoselectCBox)
+        leftLayout.setContentsMargins(1, 1, 1, 1)
+        leftLayout.setSpacing(2)
+        leftLayout.addLayout(cBoxLayout, 2, 0)
+        leftLayout.addWidget(self.list, 1, 0)
+        leftLayout.addLayout(topLayout, 0, 0)
+        leftWidget = qt.QWidget(self)
+        leftWidget.setLayout(leftLayout)
+        self.splitter.addWidget(leftWidget)
+        self.splitter.addWidget(self.ScanWindow)
+        mainLayout = qt.QVBoxLayout()
+        mainLayout.addWidget(self.splitter)
+        self.setLayout(mainLayout)
 
+        self.autoselectCBox.activated['QString'].connect(self.autoselect)
         buttonUpdate.clicked.connect(self.updatePlots)
+        buttonOptions.clicked.connect(self.showOptionsWindow)
         self.list.selectionModifiedSignal.connect(self.updateSelectionDict)
         self.setSelectionSignal.connect(self.ScanWindow.processSelection)
 
-#        self.setLayout(mainLayout)
         self.updateTree()
         self.list.sortByColumn(1, qt.Qt.AscendingOrder)
         self._setBeamlineSpecific(self.beamline)
+    
+    def showOptionsWindow(self):
+        # XMCDOptions is hidden
+#        optsWindow = XMCDOptions(self)
+#        if optsWindow.exec_():
+        if self.optsWindow.exec_():
+            options = self.optsWindow.getOptions()
+            self.ScanWindow.processOptions(options)
+            if DEBUG:
+                print 'showOptionsWindow -- options changed:'
+                print '\toptions = ', options
     
     def autoselect(self, option):
         '''
@@ -1176,6 +1407,7 @@ def main():
     swin.newCurve(x, y1, legend="Curve1", xlabel='ene_st1', ylabel='zratio1', info=info1, replot=False, replace=False)
     
     w = SortPlotsWidget(None, swin, 'ID08', nSelectors = 2)
+#    w = XMCDOptions(None)
     w.show()
     app.exec_()
 
