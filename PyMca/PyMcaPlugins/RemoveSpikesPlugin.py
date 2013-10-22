@@ -1,3 +1,31 @@
+#/*##########################################################################
+# Copyright (C) 2004-2013 European Synchrotron Radiation Facility
+#
+# This file is part of the PyMca X-ray Fluorescence Toolkit developed at
+# the ESRF by the Software group.
+#
+# This toolkit is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the Free
+# Software Foundation; either version 2 of the License, or (at your option)
+# any later version.
+#
+# PyMca is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# PyMca; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+#
+# PyMca follows the dual licensing model of Riverbank's PyQt and cannot be
+# used as a free plugin for a non-free program.
+#
+# Please contact the ESRF industrial unit (industry@esrf.fr) if this license
+# is a problem for you.
+#############################################################################*/
+__author__ = "T. Rueter - ESRF Data Analysis"
+
 try:
     from PyMca import Plugin1DBase
 except ImportError:
@@ -9,43 +37,99 @@ except ImportError:
     print("RemoveSpikesPlugin importing directly")
     from PyMca.PyMcaSciPy.signal import medfilt1d
 
+from PyMca import PyMcaQt as qt
 import numpy
     
 DEBUG = True
 class RemoveSpikes(Plugin1DBase.Plugin1DBase):
     def __init__(self,  plotWindow,  **kw):
         Plugin1DBase.Plugin1DBase.__init__(self,  plotWindow,  **kw)
-        self.methodDict = {}
-        text = 'Remove spikes from active curve'
-        function = self.removeSpikesActive
-        icon = None
-        info = text
-        self.methodDict["Remove spikes"] =[function, info, icon]
-        text = 'Remove spikes from all curve'
-        function = self.removeSpikesAll
-        icon = None
-        info = text
-        self.methodDict["Remove spikes"] =[function, info, icon]
-        self.widget = None
+        self.methodDict = {
+            'Apply to active curve':
+                [self.removeSpikesActive,
+                 'Remove spikes from active curve',
+                 None],
+            'Apply to all curves':
+                [self.removeSpikesAll,
+                 'Remove spikes from all curves',
+                 None],
+            'Configure median filter':
+                [self.configureFilter,
+                 'Set threshold and width of the filter',
+                 None]
+        }
+        # TODO: Set threshold and width default values
+        print 'Here come the mD:\n',self.methodDict
     
+    #Methods to be implemented by the plugin
     def getMethods(self, plottype=None):
+        """
+        A list with the NAMES  associated to the callable methods
+        that are applicable to the specified plot.
+
+        Plot type can be "SCAN", "MCA", None, ...        
+        """
         names = list(self.methodDict.keys())
         names.sort()
         return names
 
     def getMethodToolTip(self, name):
+        """
+        Returns the help associated to the particular method name or None.
+        """
         return self.methodDict[name][1]
 
     def getMethodPixmap(self, name):
+        """
+        Returns the pixmap associated to the particular method name or None.
+        """
         return self.methodDict[name][2]
 
     def applyMethod(self, name):
+        """
+        The plugin is asked to apply the method associated to name.
+        """
         self.methodDict[name][0]()
         return
 
-    def setThreshold(self):
+    def configureFilter(self):
         # TODO: Spawn QDialog, ask for threshold % window width
-        pass
+        msg = qt.QDialog()
+        msgLayout = qt.QGridLayout()
+        buttonLayout = qt.QHBoxLayout()
+        threshold = qt.QSpinBox()
+        threshold.setRange(1,99)
+        threshold.setSingleStep(2)
+        threshold.setValue(66)
+##        threshold.setValidator(qt.QDoubleValidator(0.,0.99, 2, threshold))
+        width = qt.QSpinBox()
+        width.setRange(1,100)
+        width.setSingleStep(2)
+        width.setValue(9)
+        labelWidth = qt.QLabel('Width (must be odd)')
+        labelThreshold = qt.QLabel('Threshold (Percent of Maximum)')
+        buttonOK = qt.QPushButton('Ok')
+        buttonOK.clicked.connect(msg.accept)
+        buttonCancel = qt.QPushButton('Cancel')
+        buttonCancel.clicked.connect(msg.reject)
+        buttonLayout.addWidget(qt.HorizontalSpacer())
+        buttonLayout.addWidget(buttonOK)
+        buttonLayout.addWidget(buttonCancel)
+        msgLayout.addWidget(labelWidth,0,0)
+        msgLayout.addWidget(width,0,1)
+        msgLayout.addWidget(labelThreshold,1,0)
+        msgLayout.addWidget(threshold,1,1)
+        msgLayout.addLayout(buttonLayout,2,0,1,2)
+        msg.setLayout(msgLayout)
+        val = msg.exec_()
+        if val:
+            try:
+                thr = float(str(threshold.text()))
+                wid = float(str(width.value()))
+            except:
+                thr = 0.66
+                wid = 9
+        print thr, wid
 
     def removeSpikesAll(self):
         self.medianThresholdFilter(False)
@@ -58,6 +142,10 @@ class RemoveSpikes(Plugin1DBase.Plugin1DBase):
             active = self._plotWindow.getActiveCurve()
             if not active:
                 return
+            else:
+                x, y, legend, info = spec
+                self.removeCurve(legend)
+                spectra = [active]
         else:
             spectra = self._plotWindow.getAllCurves()
         for (i,spec) in enumerate(spectra):
@@ -65,16 +153,16 @@ class RemoveSpikes(Plugin1DBase.Plugin1DBase):
             filtered = medfilt1d(y, length)
             diff = abs(filtered-y)
             if not threshold:
-                threshold = .5 * diff.max() # OR: diff.mean()
+                threshold = .66 * diff.max() # OR: diff.mean()
             ynew = numpy.where(diff>threshold, filtered, y)
             legend = info.get('selectionlegend','') + ' SR'
-            if i==0 and (len(spectra)!=1):
-                self._plotWindow.addCurve(x,ynew,legend,info, replace=True)
+            if (i==0) and (len(spectra)!=1):
+                self.addCurve(x,ynew,legend,info, replace=True)
             else:
-                self._plotWindow.addCurve(x,ynew,legend,info)
+                self.addCurve(x,ynew,legend,info)
         
 
-MENU_TEXT = "Remove spikes"
+MENU_TEXT = "Spike-X Plugin" #Remove spikes
 def getPlugin1DInstance(plotWindow,  **kw):
     ob = RemoveSpikes(plotWindow)
     return ob
@@ -101,9 +189,11 @@ if __name__ == "__main__":
     sw.addCurve(x, y2, legend="Curve2", info=info2, replot=False, replace=False)
 
     plugin = getPlugin1DInstance(sw)
-    plugin.applyMethod(plugin.getMethods()[0])
+    plugin.configureFilter()
+##    print plugin.methodDict
+##    plugin.applyMethod(plugin.getMethods()[0])
     
-    sw.show()
+##    sw.show()
     
     app.exec_()
     
