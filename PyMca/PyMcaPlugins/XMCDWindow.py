@@ -1245,7 +1245,8 @@ class XMCDWidget(qt.QWidget):
         self.list.setColumnCount(ncols)
         self.list.setHeaderLabels(labels)
         self.list.setSortingEnabled(True)
-        self.list.setSelectionMode(qt.QAbstractItemView.ExtendedSelection)
+        self.list.setSelectionMode(
+            qt.QAbstractItemView.ExtendedSelection)
         listContextMenu = XMCDMenu(None)
         listContextMenu.setActionList(
               [('Perform analysis', self.triggerXMCD),
@@ -1263,9 +1264,27 @@ class XMCDWidget(qt.QWidget):
                         ['Select Experiment',
                          'ID08: Linear Dichorism',
                          'ID08: XMCD',
-                         'Add new experiment'])
+                         'Add new experiment',
+                         'Load existing Experiment'])
         self.autoselectCBox.insertSeparator(1)
         self.autoselectCBox.insertSeparator(4)
+        
+        self.experimentsDict = {
+            'ID08: XMCD': {
+                  'xrange': 0,
+                  'normalization': 0,
+                  'normalizationMethod': 'offsetAndArea',
+                  'motor0': 'PhaseD',
+                  'motor1': 'oxPS'
+            },
+            'ID08: Linear Dichorism': {
+                  'xrange': 0,
+                  'normalization': 0,
+                  'normalizationMethod': 'offsetAndArea',
+                  'motor0': 'PhaseD',
+                  'motor1': ''                     
+            }
+        }
         
         self.splitter = qt.QSplitter(qt.Qt.Horizontal, self)
         cBoxLayout = qt.QHBoxLayout(None)
@@ -1293,7 +1312,8 @@ class XMCDWidget(qt.QWidget):
         mainLayout.addWidget(self.splitter)
         self.setLayout(mainLayout)
 
-        self.autoselectCBox.activated['QString'].connect(self.autoselect)
+#        self.autoselectCBox.activated['QString'].connect(self.autoselect)
+        self.autoselectCBox.activated['QString'].connect(self.autoselectNew)
 #        buttonUpdate.clicked.connect(self.updatePlots)
 #        buttonUpdate.clicked.connect(self.newExperiment)
         buttonUpdate.clicked.connect(self.updateAutoselectItems)
@@ -1301,6 +1321,7 @@ class XMCDWidget(qt.QWidget):
         self.list.selectionModifiedSignal.connect(self.updateSelectionDict)
         self.setSelectionSignal.connect(self.ScanWindow.processSelection)
         self.ScanWindow.saveOptionsSignal.connect(self.optsWindow.saveOptions)
+        self.optsWindow.accepted[()].connect(self.optionsChanged)
 
         self.updateTree()
         self.list.sortByColumn(1, qt.Qt.AscendingOrder)
@@ -1308,40 +1329,49 @@ class XMCDWidget(qt.QWidget):
 
     def updateAutoselectItems(self, items):
         cBox = self.autoselectCBox
-        new = [cBox.itemText(i) for i in range(cBox.count())][2:-2]
+        new = [cBox.itemText(i) for i in range(cBox.count())][2:-3]
         new.insert(0, 'Select Experiment')
         new += items
         new.append('Add new Experiment')
+        new.append('Load existing Experiment')
         cBox.clear()
         cBox.addItems(new)
         cBox.insertSeparator(1)
-        cBox.insertSeparator(len(new))
+        cBox.insertSeparator(len(new)-1)
 
     def setExperiment(self, ddict):
         pass
 
-    def newExperiment(self):
-        exp, chk = qt.QInputDialog.\
-                        getText(self,
-                                'Configure new experiment',
-                                'Enter experiment title',
-                                qt.QLineEdit.Normal, 
-                                'ID00: <Title>')
-        if chk and (not exp.isEmpty()):
-            opts = XMCDOptions(self, self.motorNamesList, False)
-            if opts.exec_():
-                ddict = opts.getOptions()
-                self.updateAutoselectItems([exp])
-#                # 
-#                self.setOp
-            opts.destroy()
+    def newExperiment(self, new=True):
+        if new:
+            exp, chk = qt.QInputDialog.\
+                            getText(self,
+                                    'Configure new experiment',
+                                    'Enter experiment title',
+                                    qt.QLineEdit.Normal, 
+                                    'ID00: <Title>')
+            if chk and (not exp.isEmpty()):
+                opts = XMCDOptions(self, self.motorNamesList, False)
+                if opts.exec_():
+                    ddict = opts.getOptions()
+                    self.updateAutoselectItems([exp])
+                opts.destroy()
+        else:
+            self.optsWindow.show()
+            self.optsWindow.raise_()
         
-            
+    def optionsChanged(self, optionsDict=None):
+        if optionsDict:
+            self.optsWindow.setOptions(optionsDict)
+        else:
+            optionsDict = self.optsWindow.getOptions()
+        motors = sorted(
+            [k for k in optionsDict.keys() if k.startswith('motor')])
+        for (id,motor) in enumerate(motors):
+            motorName = optionsDict[motor]
+            self.setComboBoxToMotor(id, motorName)
 
     def showOptionsWindow(self):
-        # XMCDOptions is hidden
-#        optsWindow = XMCDOptions(self)
-#        if optsWindow.exec_():
         if self.optsWindow.exec_():
             options = self.optsWindow.getOptions()
             self.ScanWindow.processOptions(options)
@@ -1349,12 +1379,41 @@ class XMCDWidget(qt.QWidget):
                 print 'showOptionsWindow -- options changed:'
                 print '\toptions = ', options
 
-    def autoselectNew(self, option):
-        option = str(option)
-        if option == 'Add new experiment':
+    def autoselectNew(self, exp):
+        exp = str(exp)
+        if exp == 'Add new experiment':
             self.newExperiment()
+            return
+        elif exp == 'Load existing Experiment':
+            self.newExperiment(new=False)
+            return
+        elif exp in self.experimentsDict:
+            self.optionsChanged(self.experimentsDict[exp])
+            self.assignSelection(exp)
+
+    def assignSelection(self, exp):
+        values0 = numpy.array(self.list.getColumn(2, convertType=float))
+        values1 = numpy.array(self.list.getColumn(3, convertType=float))
+        if exp == 'ID08: Linear Dichorism':
+            values = values0
+            vmin = values.min()
+            vmax = values.max()
+            vpivot = .5 * (vmax + vmin)
+        elif exp == 'ID08: XMCD':
+            values = values0 * values1
+            vpivot = 0.
         else:
-            pass
+            values = numpy.array([float('NaN')]*len(self.legendList))
+            vpivot = 0.
+        seq = ''
+        for x in values:
+            if str(x) == 'nan':
+                seq += 'd'
+            elif x>vpivot:
+                seq += 'p'
+            else:
+                seq += 'm'
+        self.list.setSelectionToSequence(seq)
         
     def autoselect(self, option):
         '''
@@ -1381,6 +1440,9 @@ class XMCDWidget(qt.QWidget):
         # Set motor names
         if option == 'Add new experiment':
             self.newExperiment()
+            return
+        elif option == 'Load existing Experiment':
+            self.newExperiment(new=False)
             return
         elif option == 'ID08: Linear Dichorism':
             motor0 = 'PhaseD'
@@ -1437,13 +1499,11 @@ class XMCDWidget(qt.QWidget):
         if not (idx < max):
             raise IndexError('Only %d Comboboxes present'%len(max))
         cBox  = self.cBoxList[idx]
-        motors = [str(cBox.itemText(i)) for i in range(cBox.count())]
-        if motor in motors:
-            index = motors.index(motor)
-            cBox.setCurrentIndex(index)
-            self.updateTree()
-        else:
+        id = cBox.findText(motor)
+        if id < 0:
             raise ValueError('"%s" not in motors'%motor)
+        cBox.setCurrentIndex(id)
+        self.updateTree()
 
     def triggerXMCD(self):
         msel = self.selectionDict['m']
@@ -1457,7 +1517,6 @@ class XMCDWidget(qt.QWidget):
         if DEBUG:
             print 'removeCurve_ -- sel(ection):\n\t',
             print '\n\t'.join(sel)
-#        self.plotWindow.removeCurves(sel)
         for legend in sel:
             self.plotWindow.removeCurve(legend) # uses plugin interface
             if legend in self.ScanWindow.curvesDict.keys():
@@ -1468,10 +1527,6 @@ class XMCDWidget(qt.QWidget):
         msel = self.selectionDict['m']
         psel = self.selectionDict['p']
         self.updatePlots()
-#        print self.ScanWindow.curvesDict
-#        print self.ScanWindow.selectionDict
-#        print self.selectionDict
-#        self.ScanWindow.processSelection(msel, psel) UEBERFLUESSIG
 
     def updateSelectionDict(self):
         self.selectionDict = self.list.getSelection()
@@ -1505,7 +1560,6 @@ class XMCDWidget(qt.QWidget):
         if experiment != 'Select Experiment':
             # Unable to open 
             self.autoselect(experiment)
-        
 
     def updateTree(self):
         mList  = [ str(cBox.currentText()) for cBox in self.cBoxList ]
