@@ -56,12 +56,12 @@ class XMCDAnalysis(Plugin1DBase.Plugin1DBase):
             print '_createWidget -- beamline = "%s"'%beamline
         parent = None
         self.widget = XMCDWindow.XMCDWidget(parent,
-                                                      self._plotWindow,
-                                                      beamline,
-                                                      nSelectors = 2)
+                                              self._plotWindow,
+                                              beamline,
+                                              nSelectors = 2)
         
 
-MENU_TEXT = "Sort Plots"
+MENU_TEXT = "XLD/XMCD Analysis"
 def getPlugin1DInstance(plotWindow,  **kw):
     ob = XMCDAnalysis(plotWindow)
     return ob

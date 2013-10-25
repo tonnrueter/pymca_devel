@@ -14,17 +14,20 @@ if DEBUG:
 
 class XMCDOptions(qt.QDialog):
     
-    xmcdSetOptionsSignal = qt.pyqtSignal(object)
+    setOptionsSignal = qt.pyqtSignal(object)
     
-    def __init__(self, parent):
+    def __init__(self, parent, mList, full=True):
         qt.QDialog.__init__(self, parent)
-        self.setWindowTitle('XMCD Options')
+        self.setWindowTitle('XLD/XMCD Options')
         self.setModal(True)
+        self.motorList = mList
+        self.saved = False
 
         # Buttons
         buttonOK = qt.QPushButton('OK')
         buttonCancel = qt.QPushButton('Cancel')
-        buttonSave = qt.QPushButton('Save')
+        if full:
+            buttonSave = qt.QPushButton('Save')
         buttonLoad = qt.QPushButton('Load')
 
         # OptionLists and ButtonGroups
@@ -36,52 +39,83 @@ class XMCDOptions(qt.QDialog):
                       'Active &curve',
                       '&Use equidistant x-range']
         # ButtonGroups
-        normBG = qt.QButtonGroup(self)
+        normBG   = qt.QButtonGroup(self)
         xrangeBG = qt.QButtonGroup(self)
+        # ComboBoxes
+        normMeth = self.getComboBox(['(y-min(y))/trapz(max(y)-min(y),x)',
+                                     'y/max(y)',
+                                     '(y-min(y))/(max(y)-min(y))',
+                                     '(y-min(y))/sum(max(y)-min(y))'])
+        normMeth.setEnabled(False)
+        motor0 = self.getComboBox(mList)
+        motor1 = self.getComboBox(mList)
         self.optsDict = {
             'normalization' : normBG,
-            'normalizationMethod' : 'offsetAndArea',
-            'xrange' : xrangeBG
+            'normalizationMethod' : normMeth,
+            'xrange' : xrangeBG,
+            'motor0': motor0,
+            'motor1': motor1
         }
+        # Subdivide into GroupBoxes
         normGroupBox = self.getGroupBox('Normalization', 
                                         normOpts, 
                                         normBG)
         xrangeGroupBox = self.getGroupBox('Interpolation x-range',
                                           xrangeOpts,
                                           xrangeBG)
-        # Normalization method
-        self.normMeth = qt.QComboBox()
-        self.normMeth.addItems(['(y-min(y))/trapz(max(y)-min(y),x)',
-                                'y/max(y)',
-                                '(y-min(y))/(max(y)-min(y))',
-                                '(y-min(y))/sum(max(y)-min(y))'])
-        self.normMeth.setEnabled(False)
+        motorGroupBox = qt.QGroupBox('Motors')
         
         # Layouts
-        mainLayout = qt.QGridLayout()
-        buttonLayout = qt.QHBoxLayout()        
+        mainLayout = qt.QVBoxLayout()
+        buttonLayout = qt.QHBoxLayout()
         normLayout = qt.QHBoxLayout()
-        buttonLayout.addWidget(buttonSave)
+        motorLayout = qt.QGridLayout()
+        if full: buttonLayout.addWidget(buttonSave)
         buttonLayout.addWidget(buttonLoad)
         buttonLayout.addWidget(qt.HorizontalSpacer())
         buttonLayout.addWidget(buttonOK)
         buttonLayout.addWidget(buttonCancel)
-        mainLayout.addWidget(normGroupBox, 0, 0)
-        mainLayout.addWidget(xrangeGroupBox,1,0)
-        mainLayout.addLayout(buttonLayout,2,0)
         normLayout.addWidget(qt.QLabel('Method:'))
-        normLayout.addWidget(self.normMeth)
-        self.setLayout(mainLayout)
+        normLayout.addWidget(normMeth)
+        motorLayout.addWidget(qt.QLabel('Motor 1:'),0,0)
+        motorLayout.addWidget(motor0,0,1)
+        motorLayout.addWidget(qt.QLabel('Motor 2:'),1,0)
+        motorLayout.addWidget(motor1,1,1)
+        motorGroupBox.setLayout(motorLayout)
         normGroupBox.layout().addLayout(normLayout)
+        mainLayout.addWidget(normGroupBox)
+        mainLayout.addWidget(xrangeGroupBox)
+        mainLayout.addWidget(motorGroupBox)
+        mainLayout.addLayout(buttonLayout)
+        self.setLayout(mainLayout)
         
         # Connects
-        buttonOK.clicked.connect(self.accept)
+        if full:
+            buttonOK.clicked.connect(self.accept)
+        else:
+            buttonOK.clicked[()].connect(self.saveOptionsAndClose)
         buttonCancel.clicked.connect(self.close)
-        buttonSave.clicked.connect(self.saveOptions)
-        buttonLoad.clicked.connect(self.loadOptions)
-        normBG.buttonClicked['QAbstractButton *'].connect(self.optionChanged)
-        self.normMeth.activated['QString'].connect(self.setNormalizationMethod)
-#        self.xrangeBG.buttonClicked['int'].connect(self.optionChanged)
+        if full:
+            buttonSave.clicked[()].connect(self.saveOptions)
+        buttonLoad.clicked[()].connect(self.loadOptions)
+        # Keep normalization method selector disabled 
+        # when 'no normalization' selected
+        normBG.button(0).toggled.connect(normMeth.setDisabled)
+
+    def showEvent(self, event):
+        self.saved = False
+        qt.QDialog.showEvent(self, event)
+
+    def updateMotorList(self, mList):
+        for (key, cbox) in self.optsDict.items():
+            if key.startswith('Motor'):
+                cbox.clear()
+                cbox.addItems(mList)
+    
+    def getComboBox(self, itemList):
+        tmp = qt.QComboBox()
+        tmp.addItems(itemList)
+        return tmp
         
     def getGroupBox(self, title, optionList, buttongroup=None):
         '''
@@ -112,71 +146,63 @@ class XMCDOptions(qt.QDialog):
         groupBox.setLayout(gbLayout)
         return groupBox
 
-    def setNormalizationMethod(self, name):
-        if name == r'y/max(y)':
-            self.optsDict['normalizationMethod'] = 'toMaximum'
-        elif name == r'(y-min(y))/(max(y)-min(y))':
-            self.optsDict['normalizationMethod'] = 'offsetAndMaximum'
-        elif name == r'(y-min(y))/trapz(max(y)-min(y),x)':
-            self.optsDict['normalizationMethod'] = 'offsetAndCounts'
-        elif name == r'(y-min(y))/sum(max(y)-min(y))':
-            self.optsDict['normalizationMethod'] = 'offsetAndArea'
-        if DEBUG:
-            print 'setNormalizationMethod -- Method changed:'
-            print '\t', name, '->', self.optsDict['normalizationMethod']
-            
-    def getNormalizationMethod(self, name):
-        if name == 'toMaximum':
-            return r'y/max(y)'
-        elif name == 'offsetAndMaximum':
-            return r'(y-min(y))/(max(y)-min(y))'
-        elif name == 'offsetAndCounts':
-            return r'(y-min(y))/sum(max(y)-min(y))'
-        elif name == 'offsetAndArea':
-            return r'(y-min(y))/trapz(max(y)-min(y),x)'
-        else:
-            return ''
-        
+    def normalizationMethod(self, ident):
+        ret = None
+        normDict = {
+            'toMaximum'       : r'y/max(y)',
+            'offsetAndMaximum': r'(y-min(y))/(max(y)-min(y))',
+            'offsetAndCounts' : r'(y-min(y))/sum(max(y)-min(y))',
+            'offsetAndArea'   : r'(y-min(y))/trapz(max(y)-min(y),x)'
+        }
+        for (name, eq) in normDict.iteritems():
+            if ident == name:
+                return eq
+            if ident == eq:
+                return name
+        raise ValueError("'%s' not found.")
 
-    def optionChanged(self, val):
-        print 'optionChanged: ', val
-        normBG = self.optsDict['normalization']
-        if val in normBG.buttons():
-            if normBG.checkedId() > 0:
-                self.normMeth.setEnabled(True)
-            else:
-                self.normMeth.setEnabled(False)
-        
-    def saveOptions(self):
+    def saveOptionsAndClose(self):
+        if not self.saved:
+            self.saveOptions()
+        self.accept()
+
+    def saveOptions(self, filename=None):
         if DEBUG:
             print 'Save clicked'
         saveDir = PyMcaDirs.outputDir
         filter = 'PyMca (*.cfg)'
-        filename = qt.QFileDialog.\
-                    getSaveFileName(self,
-                                    'Save XMCD Analysis Configuration',
-                                    saveDir,
-                                    filter)
+        if filename is None:
+            filename = qt.QFileDialog.\
+                        getSaveFileName(self,
+                                        'Save XLD/XMCD Analysis Configuration',
+                                        saveDir,
+                                        filter)
+            print 'Filename: "%s"'%filename
+        if len(filename) == 0:
+            self.saved = False
         if not str(filename).endswith('.cfg'):
             filename += '.cfg'
         confDict = ConfigDict.ConfigDict()
-        confDict['XMCDOptions'] = self.getOptions()
+        tmp = self.getOptions()
+        for (key, value) in tmp.items():
+            if key.startswith('Motor') and len(value) == 0:
+                tmp[key] = 'None'
+        confDict['XMCDOptions'] = tmp
         try:
             confDict.write(filename)
         except IOError:
             msg = qt.QMessageBox()
-            msg.setWindowTitle('XMCD Options Error')
+            msg.setWindowTitle('XLD/XMCD Options Error')
             msg.setText('Unable to write configuration to \'%s\''%filename)
             msg.exec_()
+        self.saved = True
 
     def loadOptions(self):
-        if DEBUG:
-            print 'Load configuration clicked'
         openDir = PyMcaDirs.outputDir
         filter = 'PyMca (*.cfg)'
         filename = qt.QFileDialog.\
                     getOpenFileName(self,
-                                    'Load XMCD Analysis Configuration',
+                                    'Load XLD/XMCD Analysis Configuration',
                                     openDir,
                                     filter)
         confDict = ConfigDict.ConfigDict()
@@ -187,70 +213,79 @@ class XMCDOptions(qt.QDialog):
             msg.setTitle('XMCD Options Error')
             msg.setText('Unable to read configuration file \'%s\''%filename)
             return
-        if (not 'XMCDOptions' in confDict):
+        if 'XMCDOptions'not in confDict:
             return
-        print confDict
-        for option in confDict['XMCDOptions'].keys():
-            if option in self.optsDict:
-                if option == 'normalizationMethod':
-                    label  = confDict['XMCDOptions'][option]
-                    method = qt.QString(self.getNormalizationMethod(label))
-                    itemList = [self.normMeth.itemText(i) for i in range(self.normMeth.count())]
-                    if method in itemList:
-                        id = itemList.index(method)
-                        self.normMeth.setCurrentIndex(id)
-                    else:
-                        self.normMeth.setCurrentIndex(-1)
-                else:
-                    try:
-                        id = int(confDict['XMCDOptions'][option])
-                    except ValueError:
-                        if DEBUG:
-                            print 'loadOptions -- int conversion failed:',
-                            print 'Invalid value for option \'%s\''%option
-                            continue
-                        else:
-                            msg = qt.QMessageBox()
-                            msg.setWindowTitle('XMCD Options Error')
-                            msg.setText('Configuration file \'%s\' corruted'%filename)
-                            msg.exec_()
-                            return
-                    button = self.optsDict[option].button(id)
-                    if type(button) == type(qt.QRadioButton()):
-                            button.setChecked(True)
-                if self.optsDict['normalization'].checkedId() > 0:
-                    self.normMeth.setEnabled(True)
-                else:
-                    self.normMeth.setEnabled(False)
+        try:
+            self.setOptions(confDict['XMCDOptions'])
+        except ValueError as e:
+            if DEBUG:
+                print 'loadOptions -- int conversion failed:',
+                print 'Invalid value for option \'%s\''%e
+            else:
+                msg = qt.QMessageBox()
+                msg.setWindowTitle('XMCD Options Error')
+                msg.setText('Configuration file \'%s\' corruted'%filename)
+                msg.exec_()
+                return
+        except KeyError as e:
+            if DEBUG:
+                print 'loadOptions -- invalid identifier:',
+                print 'option \'%s\' not found'%e
+            else:
+                msg = qt.QMessageBox()
+                msg.setWindowTitle('XMCD Options Error')
+                msg.setText('Configuration file \'%s\' corruted'%filename)
+                msg.exec_()
+                return
+        self.saved = True
 
     def getOptions(self):
         ddict = {}
-        for (option, value) in self.optsDict.items():
-            if type(value) == type(qt.QButtonGroup()):
-                ddict[option] = value.checkedId()
-            if type(value) == type(' '):
-                ddict[option] = value
-        print ddict
+        for (option, obj) in self.optsDict.items():
+            if isinstance(obj, qt.QButtonGroup):
+                ddict[option] = obj.checkedId()
+            elif isinstance(obj, qt.QComboBox):
+                tmp = str(obj.currentText())
+                if option == 'normalizationMethod':
+                    tmp = self.normalizationMethod(tmp)
+                if option.startswith('motor') and (not len(tmp)):
+                    tmp = 'None'
+                ddict[option] = tmp
+            else:
+                ddict[option] = 'None'
         return ddict
-        
-    def emitXmcdSetOptionsSignal(self):
-        ddict = {}
-        for (key, buttongroup) in self.optsDict.items():
-            ddict[key] = buttongroup.checkedId()
-        self.xmcdSetOptionsSignal.emit(ddict)
-        if DEBUG:
-            print ddict
+
+    def setOptions(self, ddict):
+        for option in ddict.keys():
+            obj = self.optsDict[option]
+            if isinstance(obj, qt.QComboBox):
+                name = ddict[option]
+                if option == 'normalizationMethod':
+                    name = self.normalizationMethod(name)
+                if option.startswith('Motor') and name=='None':
+                    name = ''
+                id = obj.findText(qt.QString(name))
+                obj.setCurrentIndex(id)
+            elif isinstance(obj, qt.QButtonGroup):
+                try:
+                    id = int(ddict[option])
+                except ValueError:
+                    raise ValueError(option)
+                button = self.optsDict[option].button(id)
+                if type(button) == type(qt.QRadioButton()):
+                        button.setChecked(True)
 
 class XMCDScanWindow(sw.ScanWindow):
 
     plotModifiedSignal = qt.pyqtSignal()
+    saveOptionsSignal = qt.pyqtSignal('QString')
 
     def __init__(self,
                  origin,
                  parent=None):
         sw.ScanWindow.__init__(self, 
                                parent, 
-                               name='XMCD Analysis', 
+                               name='XLD/XMCD Analysis', 
                                specfit=None)
         self.plotWindow = origin
         self.scanWindowInfoWidget.hide()
@@ -258,10 +293,10 @@ class XMCDScanWindow(sw.ScanWindow):
         # Buttons to push spectra to main Window
         buttonShowXAS = qt.QPushButton('Hide XAS', self)
         buttonShowXMCD = qt.QPushButton('Hide XMCD', self)
-        buttonAdd = qt.QPushButton('Add',  self)
-        buttonReplace = qt.QPushButton('Replace',  self)
-        buttonAddAll = qt.QPushButton('Add all',  self)
-        buttonReplaceAll = qt.QPushButton('Replace all',  self)
+        buttonAdd = qt.QPushButton('Add', self)
+        buttonReplace = qt.QPushButton('Replace', self)
+        buttonAddAll = qt.QPushButton('Add all', self)
+        buttonReplaceAll = qt.QPushButton('Replace all', self)
         buttonLayout = qt.QHBoxLayout(None)
         buttonLayout.setContentsMargins(0, 0, 0, 0)
         buttonLayout.setSpacing(5)
@@ -298,20 +333,23 @@ class XMCDScanWindow(sw.ScanWindow):
         self.xas  = None
 
     def processOptions(self, options):
-        tmp = {}
+        print 'processOptions -- options:\n\t', options
+        tmp = { 'equidistant': False,
+                'useActive': False,
+                'normAfterAvg': False,
+                'normBeforeAvg': False,
+                'normalizationMethod': None
+        }
         xrange = options['xrange']
         normalization = options['normalization']
         normMethod = options['normalizationMethod']
+        print 'normMethod: ',normMethod
         # xrange Options. Default: Use first scan
-        tmp['equidistant'] = False
-        tmp['useActive']   = False
         if xrange == 1:
             tmp['useActive']   = True
         elif xrange == 2:
             tmp['equidistant'] = True
         # Normalization Options. Default: No Normalization
-        tmp['normAfterAvg']  = False
-        tmp['normBeforeAvg'] = False
         if normalization == 1:
             tmp['normAfterAvg']  = True
         elif normalization == 2:
@@ -413,12 +451,12 @@ class XMCDScanWindow(sw.ScanWindow):
         for x in xRangeList:
             if x.min() > xmin:
                 xmin = x.min()
-                if DEBUG:
-                    print 'New minimum: ', xmin
+#                if DEBUG:
+#                    print 'New minimum: ', xmin
             if x.max() < xmax:
                 xmax = x.max()
-                if DEBUG:
-                    print 'New maximum: ', xmax
+#                if DEBUG:
+#                    print 'New maximum: ', xmax
         
         if xmin >= xmax:
             # TODO: Somekind of Error..
@@ -431,8 +469,10 @@ class XMCDScanWindow(sw.ScanWindow):
             # Exclude first and last point
             out = numpy.linspace(xmin, xmax, num, endpoint=False)[1:]
         else:
-            active = self.plotWindow.getActiveCurve(just_legend=True)
-            if self.optsDict['useActive'] and active:
+            # Gives 'Please select active curve' Popup
+#            active = self.plotWindow.getActiveCurve(just_legend=True)
+            active = self.plotWindow.graph.getActiveCurve(justlegend=True)
+            if (self.optsDict['useActive'] and (active is not None)):
                 curve = self.plotWindow.dataObjectsDict[active]                    
                 if DEBUG:
                     print 'interpXRange -- Active curve is \'%s\''%active
@@ -464,8 +504,8 @@ class XMCDScanWindow(sw.ScanWindow):
             print 'm: ', self.selectionDict['m']
             print 'p: ', self.selectionDict['p']
         self.curvesDict = self.copyCurves(msel + psel)
-        for value in self.curvesDict.values():
-            print value.info
+#        for value in self.curvesDict.values():
+#            print value.info
         
         if (len(self.curvesDict) == 0) or\
            ((len(self.selectionDict['m']) == 0) and\
@@ -684,7 +724,6 @@ class XMCDScanWindow(sw.ScanWindow):
                     xlabel = labelNames[x]
         return xlabel, ylabel
 
-
     def performXAS(self):
         keys = self.dataObjectsDict.keys()
         if (self.avgM in keys) and (self.avgP in keys):
@@ -756,7 +795,7 @@ class XMCDScanWindow(sw.ScanWindow):
         # TODO: QFileDialog.getSaveFileName returns
         # filename w/o extension!
         filename = qt.QFileDialog.getSaveFileName(self,
-                                                'Save XMCD Analysis',
+                                                'Save XLD/XMCD Analysis',
                                                 saveDir,
                                                 filter)
         filename = str(filename)
@@ -802,6 +841,9 @@ class XMCDScanWindow(sw.ScanWindow):
             filehandle.write(tmp + NEWLINE)
         filehandle.write(NEWLINE)
         filehandle.close()
+        
+        # Open filehandler for config file
+        self.saveOptionsSignal.emit(splitext(filename)[0])
     
     def noiseFilter(self, y):
         size  = asarray([3] * len(y.shape))
@@ -990,13 +1032,13 @@ class XMCDTreeWidget(qt.QTreeWidget):
             else:
                 root.child(i).setSelected(True)
 
-    def getColumn(self, ncol, selectionOnly=False, convertType=str):
+    def getColumn(self, ncol, selectedOnly=False, convertType=str):
         '''
         Returns items in tree column ncol and converts them
         to convertType. If the conversion fails, the default
         type is a python string.
         
-        If selectionOnly is set to True, only the selected
+        If selectedOnly is set to True, only the selected
         the items of selected rows are returned.
         '''
         out = []
@@ -1006,7 +1048,7 @@ class XMCDTreeWidget(qt.QTreeWidget):
                 print 'getColum -- Selected column out of bounds'
             raise IndexError("Selected column '%d' out of bounds" % ncol)
             return out
-        if selectionOnly:
+        if selectedOnly:
             sel = self.selectedItems()
         else:
             root = self.invisibleRootItem()
@@ -1060,14 +1102,14 @@ class XMCDTreeWidget(qt.QTreeWidget):
             item.setText(0,id)
         self.selectionModifiedSignal.emit()
 
-    def setSelectionToSequence(self, seq=None, selectionOnly=False):
+    def setSelectionToSequence(self, seq=None, selectedOnly=False):
         '''
         Sets the id column (col 0) to seq. If
         sequence is None, a dialog window is 
         shown.
         '''
         chk = True
-        if selectionOnly:
+        if selectedOnly:
             sel = self.selectedItems()
         else:
             root = self.invisibleRootItem()
@@ -1103,11 +1145,11 @@ class XMCDTreeWidget(qt.QTreeWidget):
             item.setText(0, id)
         self.selectionModifiedSignal.emit()
 
-    def clearSelection(self, selectionOnly=True):
+    def clearSelection(self, selectedOnly=True):
         '''
         Empties the id column for the selected rows.
         '''
-        if selectionOnly:
+        if selectedOnly:
             sel = self.selectedItems()
         else:
             root = self.invisibleRootItem()
@@ -1152,7 +1194,7 @@ class XMCDWidget(qt.QWidget):
         -----
         plotWindow : ScanWindow instance
             ScanWindow from which curves are passed for
-            XMCD Analysis
+            XLD/XMCD Analysis
         nSelectors : Int
             Number of Comboboxes shown in the widget.
             Every Combobox allows to select a different motor
@@ -1178,7 +1220,7 @@ class XMCDWidget(qt.QWidget):
         self.cBoxList = []
         self.ScanWindow = XMCDScanWindow(origin=plotWindow, 
                                               parent=None)
-        self.optsWindow = XMCDOptions(self)
+        self.optsWindow = XMCDOptions(self, self.motorNamesList)
                                               
         self.selectionDict = {'d': [],
                               'p': [],
@@ -1187,7 +1229,7 @@ class XMCDWidget(qt.QWidget):
         self.setSizePolicy(qt.QSizePolicy.MinimumExpanding, 
                            qt.QSizePolicy.Expanding)
 
-        self.setWindowTitle("XMCD Analysis")
+        self.setWindowTitle("XLD/XMCD Analysis")
         updatePixmap  = qt.QPixmap(IconDict["reload"])
         buttonUpdate  = qt.QPushButton(qt.QIcon(updatePixmap), '', self)
         buttonOptions = qt.QPushButton('Options', self)
@@ -1206,7 +1248,7 @@ class XMCDWidget(qt.QWidget):
         self.list.setSelectionMode(qt.QAbstractItemView.ExtendedSelection)
         listContextMenu = XMCDMenu(None)
         listContextMenu.setActionList(
-              [('XMCD analysis', self.triggerXMCD),
+              [('Perform analysis', self.triggerXMCD),
                ('$SEPERATOR', None),
                ('Set as p', self.setAsP),
                ('Set as m', self.setAsM),
@@ -1220,7 +1262,10 @@ class XMCDWidget(qt.QWidget):
         self.autoselectCBox.addItems(
                         ['Select Experiment',
                          'ID08: Linear Dichorism',
-                         'ID08: XMCD'])
+                         'ID08: XMCD',
+                         'Add new experiment'])
+        self.autoselectCBox.insertSeparator(1)
+        self.autoselectCBox.insertSeparator(4)
         
         self.splitter = qt.QSplitter(qt.Qt.Horizontal, self)
         cBoxLayout = qt.QHBoxLayout(None)
@@ -1249,15 +1294,50 @@ class XMCDWidget(qt.QWidget):
         self.setLayout(mainLayout)
 
         self.autoselectCBox.activated['QString'].connect(self.autoselect)
-        buttonUpdate.clicked.connect(self.updatePlots)
+#        buttonUpdate.clicked.connect(self.updatePlots)
+#        buttonUpdate.clicked.connect(self.newExperiment)
+        buttonUpdate.clicked.connect(self.updateAutoselectItems)
         buttonOptions.clicked.connect(self.showOptionsWindow)
         self.list.selectionModifiedSignal.connect(self.updateSelectionDict)
         self.setSelectionSignal.connect(self.ScanWindow.processSelection)
+        self.ScanWindow.saveOptionsSignal.connect(self.optsWindow.saveOptions)
 
         self.updateTree()
         self.list.sortByColumn(1, qt.Qt.AscendingOrder)
         self._setBeamlineSpecific(self.beamline)
-    
+
+    def updateAutoselectItems(self, items):
+        cBox = self.autoselectCBox
+        new = [cBox.itemText(i) for i in range(cBox.count())][2:-2]
+        new.insert(0, 'Select Experiment')
+        new += items
+        new.append('Add new Experiment')
+        cBox.clear()
+        cBox.addItems(new)
+        cBox.insertSeparator(1)
+        cBox.insertSeparator(len(new))
+
+    def setExperiment(self, ddict):
+        pass
+
+    def newExperiment(self):
+        exp, chk = qt.QInputDialog.\
+                        getText(self,
+                                'Configure new experiment',
+                                'Enter experiment title',
+                                qt.QLineEdit.Normal, 
+                                'ID00: <Title>')
+        if chk and (not exp.isEmpty()):
+            opts = XMCDOptions(self, self.motorNamesList, False)
+            if opts.exec_():
+                ddict = opts.getOptions()
+                self.updateAutoselectItems([exp])
+#                # 
+#                self.setOp
+            opts.destroy()
+        
+            
+
     def showOptionsWindow(self):
         # XMCDOptions is hidden
 #        optsWindow = XMCDOptions(self)
@@ -1268,7 +1348,14 @@ class XMCDWidget(qt.QWidget):
             if DEBUG:
                 print 'showOptionsWindow -- options changed:'
                 print '\toptions = ', options
-    
+
+    def autoselectNew(self, option):
+        option = str(option)
+        if option == 'Add new experiment':
+            self.newExperiment()
+        else:
+            pass
+        
     def autoselect(self, option):
         '''
         Beamline-specific experiments rely on specific
@@ -1292,7 +1379,10 @@ class XMCDWidget(qt.QWidget):
         cBox0  = self.cBoxList[0]
         cBox1  = self.cBoxList[1]
         # Set motor names
-        if option == 'ID08: Linear Dichorism':
+        if option == 'Add new experiment':
+            self.newExperiment()
+            return
+        elif option == 'ID08: Linear Dichorism':
             motor0 = 'PhaseD'
             motor1 = ''
         elif option == 'ID08: XMCD':
@@ -1361,12 +1451,15 @@ class XMCDWidget(qt.QWidget):
         self.ScanWindow.processSelection(msel, psel)
 
     def removeCurve_(self):
-        sel = self.list.getColumn(1, True, str)
+        sel = self.list.getColumn(1, 
+                                  selectedOnly=True,
+                                  convertType=str)
         if DEBUG:
-            print 'removeCurve_ -- selection:\n\t',
+            print 'removeCurve_ -- sel(ection):\n\t',
             print '\n\t'.join(sel)
-        self.plotWindow.removeCurves(sel)
+#        self.plotWindow.removeCurves(sel)
         for legend in sel:
+            self.plotWindow.removeCurve(legend) # uses plugin interface
             if legend in self.ScanWindow.curvesDict.keys():
                 del(self.ScanWindow.curvesDict[legend])
         for selection in self.selectionDict.values():
@@ -1375,10 +1468,10 @@ class XMCDWidget(qt.QWidget):
         msel = self.selectionDict['m']
         psel = self.selectionDict['p']
         self.updatePlots()
-        print self.ScanWindow.curvesDict
-        print self.ScanWindow.selectionDict
-        print self.selectionDict
-        self.ScanWindow.processSelection(msel, psel)
+#        print self.ScanWindow.curvesDict
+#        print self.ScanWindow.selectionDict
+#        print self.selectionDict
+#        self.ScanWindow.processSelection(msel, psel) UEBERFLUESSIG
 
     def updateSelectionDict(self):
         self.selectionDict = self.list.getSelection()
@@ -1402,6 +1495,7 @@ class XMCDWidget(qt.QWidget):
             cBox.clear()
             cBox.addItems(self.motorNamesList)
             cBox.setCurrentIndex(index)
+        self.optsWindow.updateMotorList(self.motorNamesList)
         self.updateTree()
         # TODO: Determine x ranges in plotWindow
 #        if plotWindow.isZoomed
@@ -1520,7 +1614,8 @@ def main():
     swin.newCurve(x, y1, legend="Curve1", xlabel='ene_st1', ylabel='zratio1', info=info1, replot=False, replace=False)
     
     w = XMCDWidget(None, swin, 'ID08', nSelectors = 2)
-#    w = XMCDOptions(None)
+#    mlist = 'oxPS Motor11 Motor10 Motor8 Motor9 Motor4 Motor5 Motor6 Motor7 Motor0 Motor1 Motor2 Motor3'.split()
+#    w = XMCDOptions(None, mlist)
     w.show()
     app.exec_()
 
