@@ -4,7 +4,7 @@ except ImportError:
     from . import Plugin1DBase
     
 try:
-    from PyMca import XMCDWindow
+    from PyMca.PyMcaPlugins import XMCDWindow
 except ImportError:
     print("XMCDWindow importing from somewhere else")
     import XMCDWindow
@@ -48,10 +48,11 @@ class XMCDAnalysis(Plugin1DBase.Plugin1DBase):
 
     def _createWidget(self):
         guess = gethostname().lower()
-        if guess.startswith('dragon'):
-            beamline = 'ID08'
-        else:
-            beamline = '#default#'
+        beamline = '#default#'
+        for hostname in ['dragon']:
+            if guess.startswith(hostname):
+                beamline = 'ID08'
+                break
         if DEBUG:
             print '_createWidget -- beamline = "%s"'%beamline
         parent = None
