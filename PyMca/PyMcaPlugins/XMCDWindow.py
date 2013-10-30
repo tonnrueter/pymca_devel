@@ -288,8 +288,6 @@ class XMCDScanWindow(sw.ScanWindow):
         self.scanWindowInfoWidget.hide()
 
         # Buttons to push spectra to main Window
-#        buttonShowXAS = qt.QPushButton('Hide XAS', self)
-#        buttonShowXMCD = qt.QPushButton('Hide XMCD', self)
         buttonWidget = qt.QWidget()
         buttonAdd = qt.QPushButton('Add', self)
         buttonAdd.setToolTip('Add active curve to scan window') 
@@ -303,8 +301,6 @@ class XMCDScanWindow(sw.ScanWindow):
         buttonLayout.setContentsMargins(0, 0, 0, 0)
         buttonLayout.setSpacing(5)
         # Show XAS & XMCD Buttons
-#        buttonLayout.addWidget(buttonShowXAS)
-#        buttonLayout.addWidget(buttonShowXMCD)
         buttonLayout.addWidget(qt.HorizontalSpacer(self))
         buttonLayout.addWidget(buttonAdd)
         buttonLayout.addWidget(buttonAddAll)
@@ -337,7 +333,6 @@ class XMCDScanWindow(sw.ScanWindow):
         self.xas  = None
 
     def processOptions(self, options):
-        print 'processOptions -- options:\n\t', options
         tmp = { 'equidistant': False,
                 'useActive': False,
                 'normAfterAvg': False,
@@ -360,11 +355,10 @@ class XMCDScanWindow(sw.ScanWindow):
         # Normalization Method. Default: offsetAndArea
         tmp['normalizationMethod'] = self.setNormalizationMethod(normMethod)
         # Trigger reclaculation
-        if self.optsDict != tmp:
-            self.optsDict = tmp
-            msel = self.selectionDict['m']
-            psel = self.selectionDict['p']
-            self.processSelection(msel, psel)
+        self.optsDict = tmp
+        msel = self.selectionDict['m']
+        psel = self.selectionDict['p']
+        self.processSelection(msel, psel)
 
     def setNormalizationMethod(self, fname):
         if fname == 'toMaximum':
@@ -402,7 +396,9 @@ class XMCDScanWindow(sw.ScanWindow):
         ynorm /= ymax
         return ynorm
 
-    def interpXRange(self, equidistant=True, 
+    def interpXRange(self,
+                     xRange=None,
+                     equidistant=False,
                      xRangeList=None):
         '''
         Input
@@ -441,10 +437,12 @@ class XMCDScanWindow(sw.ScanWindow):
             xmax containing n points
         '''
         if not xRangeList:
-            xRangeList = [v.x[0] for v in self.curvesDict.values()]
+            # Default xRangeList: curvesDict sorted for legends
+            keys = sorted(self.curvesDict.keys())
+            xRangeList = [self.curvesDict[k].x[0] for k in keys]
         if not len(xRangeList):
-            # Nothing to do..
-            print 'Nothing to do'
+            if DEBUG:
+                print 'interpXRange -- Nothing to do'
             return None
             
         num = 0
@@ -452,16 +450,12 @@ class XMCDScanWindow(sw.ScanWindow):
         for x in xRangeList:
             if x.min() > xmin:
                 xmin = x.min()
-#                if DEBUG:
-#                    print 'New minimum: ', xmin
             if x.max() < xmax:
                 xmax = x.max()
-#                if DEBUG:
-#                    print 'New maximum: ', xmax
-        
         if xmin >= xmax:
-            # TODO: Somekind of Error..
+            raise ValueError('No overlap between curves')
             pass
+        
         if equidistant:
             for x in xRangeList:
                 curr = numpy.nonzero((x >= xmin) & 
@@ -470,22 +464,12 @@ class XMCDScanWindow(sw.ScanWindow):
             # Exclude first and last point
             out = numpy.linspace(xmin, xmax, num, endpoint=False)[1:]
         else:
-            # Gives 'Please select active curve' Popup
-#            active = self.plotWindow.getActiveCurve(just_legend=True)
-            active = self.plotWindow.graph.getActiveCurve(justlegend=True)
-            if (self.optsDict['useActive'] and (active is not None)):
-                curve = self.plotWindow.dataObjectsDict[active]                    
-                if DEBUG:
-                    print 'interpXRange -- Active curve is \'%s\''%active
+            if xRange is not None:
+                x = xRange
             else:
-                first = sorted(self.curvesDict.keys())[0]
-                if DEBUG:
-                    print 'interpXRange -- No active curve,',
-                    print 'proceed with \'%s\' as first'%first
-                curve = self.plotWindow.dataObjectsDict[first]
-            x = curve.x[0]
-            mask = numpy.nonzero((x >= xmin) &
-                                 (x <= xmax))[0]
+                x = xRangeList[0]
+            mask = numpy.nonzero((x > xmin) &
+                                 (x < xmax))[0]
             out = numpy.sort(numpy.take(x, mask))
         if DEBUG:
             print 'interpXRange -- Resulting xrange:'
@@ -514,15 +498,19 @@ class XMCDScanWindow(sw.ScanWindow):
             # Get active curve
             active = self.plotWindow.getActiveCurve()
             if active:
+                if DEBUG:
+                    print 'processSelection -- xrange: use active'
                 x, y, leg, info = active[0:4]
-                xRange = self.interpXRange(xRangeList=[x])
+                xRange = self.interpXRange(xRange=x)
             else:
                 return
         elif self.optsDict['equidistant']:
-            # Determine a equidistant xRange
-            xRange = self.interpXRange(self.optsDict['equidistant'])
+            if DEBUG:
+                print 'processSelection -- xrange: use equidistant'
+            xRange = self.interpXRange(equidistant=True)
         else:
-            # Use first curve
+            if DEBUG:
+                print 'processSelection -- xrange: use first'
             xRange = self.interpXRange()
         activeLegend = self.plotWindow.graph.getActiveCurve(justlegend=True)
         if (not activeLegend) or (activeLegend not in self.curvesDict.keys()):
@@ -705,7 +693,7 @@ class XMCDScanWindow(sw.ScanWindow):
             if len(xsel) > 0:
                 x = xsel[0]
             else:
-                y = -1
+                x = -1
             if len(ysel) > 0:
                 y = ysel[0]
             else:
@@ -1363,7 +1351,6 @@ class XMCDWidget(qt.QWidget):
         mainLayout.addWidget(self.splitter)
         self.setLayout(mainLayout)
 
-#        self.autoselectCBox.activated['QString'].connect(self.selectExperiment)
         self.autoselectCBox.currentIndexChanged['QString'].connect(self.selectExperiment)
         buttonUpdate.clicked.connect(self.updatePlots)
         buttonOptions.clicked.connect(self.showOptionsWindow)
@@ -1430,7 +1417,9 @@ class XMCDWidget(qt.QWidget):
             cBox = self.cBoxList[id]
             idx = cBox.findText(motorName)
             if idx < 0:
-                cBox.setCurrentIndex(0)
+                # Abort
+                for elem in self.cBoxList:
+                    elem.setCurrentIndex(0)
                 if DEBUG:
                     print 'optionsChanged -- ',
                     print '"%s" not in motors'%motorName
@@ -1444,8 +1433,6 @@ class XMCDWidget(qt.QWidget):
 
 # Implement new assignment routines here
     def selectExperiment(self, exp):
-        print 'exp "%s" selected'%exp
-        print self.experimentsDict.keys()
         exp = str(exp)
         if exp == 'Select Experiment':
             return
@@ -1456,11 +1443,14 @@ class XMCDWidget(qt.QWidget):
             self.setExperiment(new=False)
             return
         elif exp in self.experimentsDict:
+            print 'selectExperiment -- ',exp
+            print '\t',self.experimentsDict[exp]
             try:
                 self.optionsChanged(self.experimentsDict[exp])
             except ValueError:
                 # Motor not found: reset autoselectCBox
                 self.autoselectCBox.setCurrentIndex(0)
+                # TODO: What happens to selection when Exception is raised?
                 return
             values0 = numpy.array(self.list.getColumn(2, convertType=float))
             values1 = numpy.array(self.list.getColumn(3, convertType=float))
