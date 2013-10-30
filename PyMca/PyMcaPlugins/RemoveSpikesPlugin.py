@@ -24,7 +24,7 @@
 # Please contact the ESRF industrial unit (industry@esrf.fr) if this license
 # is a problem for you.
 #############################################################################*/
-__author__ = "T. Rueter - ESRF Data Analysis"
+__author__ = "T. Rueter - ESRF Data Analysis Unit"
 
 try:
     from PyMca import Plugin1DBase
@@ -97,18 +97,20 @@ class RemoveSpikes(Plugin1DBase.Plugin1DBase):
         msgLayout = qt.QGridLayout()
         buttonLayout = qt.QHBoxLayout()
         
-        inpThreshold = qt.QSpinBox()
-        inpThreshold.setRange(1,100)
-        inpThreshold.setSingleStep(1)
-        inpThreshold.setValue(int(100*self.threshold))
+        inpThreshold = qt.QDoubleSpinBox()
+        inpThreshold.setRange(0.,10.)
+        inpThreshold.setSingleStep(.1)
+        inpThreshold.setValue(2.0)
+        inpThreshold.setToolTip('Increase width for broad spikes')
 
         inpWidth = qt.QSpinBox()
         inpWidth.setRange(1,101)
         inpWidth.setSingleStep(2)
         inpWidth.setValue(self.width)
+        inpWidth.setToolTip('Set low threshold for multiple spikes of different markedness')
         
         labelWidth = qt.QLabel('Width (must be odd)')
-        labelThreshold = qt.QLabel('Threshold (Percent of Maximum)')
+        labelThreshold = qt.QLabel('Threshold (multiple of deviation)')
         buttonOK = qt.QPushButton('Ok')
         buttonOK.clicked.connect(msg.accept)
         buttonCancel = qt.QPushButton('Cancel')
@@ -135,6 +137,7 @@ class RemoveSpikes(Plugin1DBase.Plugin1DBase):
         if msg.exec_():
             try:
                 self.threshold = float(inpThreshold.value())/100.
+                self.threshold = float(inpThreshold.value())
                 self.width = int(inpWidth.value())
             except:
                 self.threshold = 0.66
@@ -170,9 +173,11 @@ class RemoveSpikes(Plugin1DBase.Plugin1DBase):
         for (i,spec) in enumerate(spectra):
             x, y, legend, info = spec
             filtered = medfilt1d(y, length)
-            diff = abs(filtered-y)
-            a = threshold * diff.max()
-            ynew = numpy.where(diff>a, filtered, y)
+            diff = filtered-y
+            mean = diff.mean()
+            sigma = (x-mean)**2
+            sigma = numpy.sqrt(sigma.sum()/len(sigma))
+            ynew = numpy.where(abs(diff) > threshold * sigma, filtered, y)
             legend = info.get('selectionlegend','') + ' SR'
             if (i==0) and (len(spectra)!=1):
                 self.addCurve(x,ynew,legend,info,replace=True) 
@@ -197,16 +202,21 @@ if __name__ == "__main__":
     y0 =  10 * x + 10000. * numpy.exp(-0.5*(x-500)*(x-500)/400) + 1500 * numpy.random.random(1000.)
     y1 =  10 * x + 10000. * numpy.exp(-0.5*(x-600)*(x-600)/400) + 1500 * numpy.random.random(1000.)
     y2 =  10 * x + 10000. * numpy.exp(-0.5*(x-400)*(x-400)/400) + 1500 * numpy.random.random(1000.)
+    y3 =  10 * x + 10000. * numpy.exp(-0.5*(x-700)*(x-700)/400) + 1500 * numpy.random.random(1000.)
     y0[320:322] = 50000.
     y2[400:405] = 12300.
     y2[200:205] = 10400.
     y1[620:623] = 16300.
     y1[800:803] = 50000.
+    y3[664:666] = 16950.
+    y3[699:701] = 20000.
+    y3[730:733] = 20000.
     
     
     sw.addCurve(x, y0, legend="Curve0")
     sw.addCurve(x, y1, legend="Curve1")
     sw.addCurve(x, y2, legend="Curve2")
+    sw.addCurve(x, y3, legend="Curve3")
     
     plugin = getPlugin1DInstance(sw)    
     plugin.configureFilter()
