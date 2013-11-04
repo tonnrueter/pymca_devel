@@ -12,6 +12,25 @@ DEBUG = True
 if DEBUG:
     numpy.set_printoptions(threshold=50)
 
+class TreeWidgetItem(qt.QTreeWidgetItem):
+    def __init__(self, parent, itemList):
+        qt.QTreeWidgetItem.__init__(self, parent, itemList)
+        
+    def __lt__(self, other):
+        col = self.treeWidget().sortColumn()
+        val      = self.text(col)
+        valOther = other.text(col)
+        if val == '---':
+                ret = True
+        elif col > 0:
+            try:
+                ret  = (float(val) < float(valOther))
+            except ValueError:
+                ret  = qt.QTreeWidgetItem.__lt__(self, other)
+        else:
+            ret  = qt.QTreeWidgetItem.__lt__(self, other)
+        return ret
+
 class XMCDOptions(qt.QDialog):
     
     setOptionsSignal = qt.pyqtSignal(object)
@@ -991,17 +1010,17 @@ class XMCDTreeWidget(qt.QTreeWidget):
 
     selectionModifiedSignal = qt.pyqtSignal()
 
-    def __init__(self,  parent, identifiers = ['p','m','d'], color=False):
+    def __init__(self,  parent, identifiers = ['p','m','d'], color=True):
         qt.QTreeWidget.__init__(self,  parent)
         self.identifiers = identifiers
         self.actionList  = []
         self.contextMenu = qt.QMenu('Perform',  self)
-        self.color = True
+        self.color = color
         self.colorDict = {
             identifiers[0] : qt.QBrush(qt.QColor(220, 220, 255)),
             identifiers[1] : qt.QBrush(qt.QColor(255, 210, 210)),
             '': qt.QBrush(qt.QColor(255, 255, 255))
-        }        
+        }
 
     def sizeHint(self):
         vscrollbar = self.verticalScrollBar()
@@ -1086,14 +1105,19 @@ class XMCDTreeWidget(qt.QTreeWidget):
         (Re-) Builds the tree display
 
         headerLabels must be of type QStringList
-        items must be of type [QStringList]
+        items must be of type [QStringList] (List of Lists)
         '''
         # Remember selection, then clear list
         sel = self.getColumn(1, True)
         self.clear()
         self.setHeaderLabels(headerLabels)
         for item in items:
-            treeItem = qt.QTreeWidgetItem(self,  item)
+#            treeItem = qt.QTreeWidgetItem(self,  item)
+            treeItem = TreeWidgetItem(self,  item)
+            if self.color:
+                id = str(treeItem.text(0))
+                for i in range(self.columnCount()):
+                    treeItem.setBackground(i, self.colorDict[id])
             if treeItem.text(1) in sel:
                 treeItem.setSelected(True)
         self.resizeColumnToContents(0)
@@ -1232,6 +1256,7 @@ class XMCDWidget(qt.QWidget):
         self.plotWindow = plotWindow
         self.legendList = []
         self.motorsList = []
+        self.infoList   = []
         # Set self.plotWindow before calling self._setLists!
         self._setLists()
         self.motorNamesList = [''] + self._getAllMotorNames()
@@ -1291,6 +1316,13 @@ class XMCDWidget(qt.QWidget):
         self.autoselectCBox.insertSeparator(5)
         
         self.experimentsDict = {
+            'Select Experiment': {
+                  'xrange': 0,
+                  'normalization': 0,
+                  'normalizationMethod': 'offsetAndArea',
+                  'motor0': '',
+                  'motor1': ''
+            },
             'ID08: XMCD': {
                   'xrange': 0,
                   'normalization': 0,
@@ -1362,6 +1394,7 @@ class XMCDWidget(qt.QWidget):
         self.updateTree()
         self.list.sortByColumn(1, qt.Qt.AscendingOrder)
         self._setBeamlineSpecific(self.beamline)
+        self.list.setDragEnabled(True)
 
     def updateAutoselectItems(self, items):
         if not len(items):
@@ -1403,6 +1436,12 @@ class XMCDWidget(qt.QWidget):
             self.optsWindow.raise_()
         
     def optionsChanged(self, optionsDict=None):
+        '''
+        optionsDict : dict
+            Contains options specific to an experiment.
+            If set to None, the options window is called
+            to get current options set.
+        '''
         if optionsDict:
             self.optsWindow.setOptions(optionsDict)
         else:
@@ -1434,9 +1473,7 @@ class XMCDWidget(qt.QWidget):
 # Implement new assignment routines here
     def selectExperiment(self, exp):
         exp = str(exp)
-        if exp == 'Select Experiment':
-            return
-        elif exp == 'Add new experiment':
+        if exp == 'Add new experiment':
             self.setExperiment(new=True)
             return
         elif exp == 'Load existing Experiment':
@@ -1448,9 +1485,9 @@ class XMCDWidget(qt.QWidget):
             try:
                 self.optionsChanged(self.experimentsDict[exp])
             except ValueError:
-                # Motor not found: reset autoselectCBox
-                self.autoselectCBox.setCurrentIndex(0)
-                # TODO: What happens to selection when Exception is raised?
+#                self.autoselectCBox.setCurrentIndex(0) # DELETE ME
+                self.optionsChanged(self.experimentsDict['Select Experiment'])
+                # keep selection
                 return
             values0 = numpy.array(self.list.getColumn(2, convertType=float))
             values1 = numpy.array(self.list.getColumn(3, convertType=float))
@@ -1474,6 +1511,12 @@ class XMCDWidget(qt.QWidget):
                 else:
                     seq += 'm'
             self.list.setSelectionToSequence(seq)
+        else:
+            # exp is not in self.experimentsDict, i.e. a new Experiment
+            # keep selection!
+            return
+            
+            
 # Implement new assignment routines here
 
     def triggerXMCD(self):
@@ -1482,14 +1525,21 @@ class XMCDWidget(qt.QWidget):
         self.ScanWindow.processSelection(msel, psel)
 
     def removeCurve_(self):
-        print '-- removeCurves_, selectionDict:', self.selectionDict
         sel = self.list.getColumn(1, 
                                   selectedOnly=True,
                                   convertType=str)
+        # Convert from scan number to legend...
+        legends = []
+        for item in sel:
+            for (idx, info) in enumerate(self.infoList):
+                if item == info['Key']:
+                    legends += [self.legendList[idx]]
         if DEBUG:
-            print 'removeCurve_ -- sel(ection):\n\t',
-            print '\n\t'.join(sel)
-        for legend in sel:
+            print 'removeCurve_ -- sel(ection):'
+            print '\t', sel
+            print 'removeCurve_ -- legends:'
+            print '\t', legends
+        for legend in legends:
             self.plotWindow.removeCurve(legend)
             for selection in self.selectionDict.values():
                 if legend in selection:
@@ -1504,7 +1554,18 @@ class XMCDWidget(qt.QWidget):
         self.updatePlots()
 
     def updateSelectionDict(self):
-        self.selectionDict = self.list.getSelection()
+        selDict = self.list.getSelection()
+        # self.selectionDict -> Uses ScanNumbers instead of keys...
+        newDict = {}
+        for (id, scanNumbers) in selDict.items():
+            if id not in newDict.keys():
+                newDict[id] = []
+            for scanNumber in scanNumbers:
+                scanNumberList = [info['Key'] for info in self.infoList]
+                idx = scanNumberList.index(scanNumber)
+                legend = self.legendList[idx]
+                newDict[id] += [legend]
+        self.selectionDict = newDict
         self.setSelectionSignal.emit(self.selectionDict['m'],
                                      self.selectionDict['p'])
 
@@ -1533,25 +1594,33 @@ class XMCDWidget(qt.QWidget):
             self.selectExperiment(experiment)
 
     def updateTree(self):
+        print 'updateTree -- selectionDict'
+        print '\t', self.selectionDict
         mList  = [ str(cBox.currentText()) for cBox in self.cBoxList ]
-        labels = ['#','Legend'] + mList
+#        labels = ['#','Legend'] + mList
+        labels = ['ID','S#'] + mList
         items  = []
         for i in range(len(self.legendList)):
+#            key = self.infoList[i].get('Key',None)
             legend = self.legendList[i]
             values = self.motorsList[i]
+            info = self.infoList[i]
             selection = ''
             for (id,v) in self.selectionDict.items():
-                if legend in v:
-                    if id != 'd':
-                        selection = id
+                if (legend in v) and (id != 'd'):
+                    selection = id
                     break
-            tmp = qt.QStringList([selection, legend])
+#            tmp = qt.QStringList([selection, legend])
+            tmp = qt.QStringList([selection, info['Key']])
             for m in mList:
                 if m == '':
                     tmp.append('')
                 else:
                     tmp.append(str(values.get(m, '---')))
             items.append(tmp)
+            print '\ttmp is:'
+            for elem in tmp:
+                print '\t\t"', str(elem) ,'"'
         self.list.build(items,  labels)
 
     def setAsM(self):
@@ -1602,8 +1671,8 @@ class XMCDWidget(qt.QWidget):
         curves = self.plotWindow.getAllCurves()
         nCurves = len(curves)
         self.legendList = [leg for (xvals, yvals,  leg,  info) in curves] 
-        infoList = [info for (xvals, yvals,  leg,  info) in curves] 
-        self.motorsList = self._convertInfoDictionary(infoList)
+        self.infoList = [info for (xvals, yvals,  leg,  info) in curves] 
+        self.motorsList = self._convertInfoDictionary(self.infoList)
 
     def _setBeamlineSpecific(self, beamline):
         '''
@@ -1633,10 +1702,16 @@ def main():
     y1 =  10 * x + 10000. * numpy.exp(-0.5*(x-600)*(x-600)/400) + 1500 * numpy.random.random(1000.)
     y2 =  10 * x + 10000. * numpy.exp(-0.5*(x-400)*(x-400)/400) + 1500 * numpy.random.random(1000.)
     y2[320:322] = 50000.
+    
     swin.newCurve(x, y2, legend="Curve2", xlabel='ene_st2', ylabel='zratio2', info=info2, replot=False, replace=False)
     swin.newCurve(x, y0, legend="Curve0", xlabel='ene_st0', ylabel='zratio0', info=info0, replot=False, replace=False)
     swin.newCurve(x, y1, legend="Curve1", xlabel='ene_st1', ylabel='zratio1', info=info1, replot=False, replace=False)
     
+    # info['Key'] is overwritten when using newCurve
+    swin.dataObjectsDict['Curve2 zratio2'].info['Key'] = '1.1'
+    swin.dataObjectsDict['Curve0 zratio0'].info['Key'] = '34.1'
+    swin.dataObjectsDict['Curve1 zratio1'].info['Key'] = '123.1'
+
     w = XMCDWidget(None, swin, 'ID08', nSelectors = 2)
 #    mlist = 'oxPS Motor11 Motor10 Motor8 Motor9 Motor4 Motor5 Motor6 Motor7 Motor0 Motor1 Motor2 Motor3'.split()
 #    w = XMCDOptions(None, mlist)
