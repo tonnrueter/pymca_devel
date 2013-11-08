@@ -1,10 +1,10 @@
 import numpy, copy
+from PyMca.PyMca_Icons import IconDict
 from PyMca import PyMcaDirs, PyMcaFileDialogs
 from PyMca import ConfigDict
-from os.path import splitext
-from os import linesep as NEWLINE
+from os.path import splitext, basename, dirname, exists, join as pathjoin
 from PyMca import PyMcaQt as qt
-from PyMca.PyMca_Icons import IconDict
+from PyMca import specfilewrapper as specfile
 
 from PyMca import ScanWindow as sw
 
@@ -12,6 +12,7 @@ DEBUG = True
 if DEBUG:
     numpy.set_printoptions(threshold=50)
 
+NEWLINE = '\n'
 class TreeWidgetItem(qt.QTreeWidgetItem):
     def __init__(self, parent, itemList):
         qt.QTreeWidgetItem.__init__(self, parent, itemList)
@@ -811,68 +812,101 @@ class XMCDScanWindow(sw.ScanWindow):
 
     def _saveIconSignal(self):
         saveDir = PyMcaDirs.outputDir
-        filter = ['spec File (*.spec)','Any File (*.*)']
+#        filter = ['spec File (*.spec)','Any File (*.*)']
+        filter = 'spec File (*.spec);;Any File (*.*)'
         try:
-            filename = PyMcaFileDialogs.\
-                            getFileList(parent=self,
-                                filetypelist=filter,
-                                message='Save XMCD Analysis',
-                                mode='SAVE',
-                                single=True)[0]
+#            filename = PyMcaFileDialogs.\
+#                            getFileList(parent=self,
+#                                filetypelist=filter,
+#                                message='Save XMCD Analysis',
+#                                mode='SAVE',
+#                                single=True)[0]
+            (filelist, append, comment) = XMCDFileDialog.\
+                                               getSaveFileName(parent=self,
+                                                               caption='Save XMCD Analysis',
+                                                               filter=filter,
+                                                               directory=saveDir)
+            filename = filelist[0]
         except IndexError:
             # Returned list is empty
             return
+
+        if append:
+            specf = specfile.Specfile(filename)
+            scanno = specf.scanno() + 1
+        else:
+            scanno = 1
 
         ext = splitext(filename)[1]
         if not len(ext):
             ext = '.spec'
             filename += ext
         try:
-            filehandle = open(filename, 'w')
+            if append:
+                filehandle = open(filename, 'ab')
+                sepFile = splitext(basename(filename))
+                sepFilename = sepFile[0] + '_%.2d'%scanno + sepFile[1]
+                sepFileName = pathjoin(dirname(filename),sepFilename)
+                # TODO: Check if sepFilename exists
+            else:
+                filehandle = open(filename, 'wb')
+                seperateFile = None
         except IOError:
             msg = qt.QMessageBox(text="Unable to write to '%s'"%filename)
             msg.exec_()
             return
-        # Keep plots in the order they were added!
-        legends = self.dataObjectsList
-        curves = [self.dataObjectsDict[leg] for leg in legends]
-        yVals = [curve.y[0] for curve in curves]
-        # xrange is the same for every curve
-        xVals = [curves[0].x[0]]
-        outArray = numpy.vstack([xVals, yVals]).T
-        if len(outArray.shape) > 1:
-            ncols = outArray.shape[1]
-        else:
-            ncols = 1   
-        # Add Title to SaveFile
-        # <selectionlegend>  <ScanNumber>
+            
         title = ''
+        legends = self.dataObjectsList
         tmpLegs = sorted(self.curvesDict.keys())
         if len(tmpLegs) > 0:
             title += self.curvesDict[tmpLegs[0]].info.get('selectionlegend','')
-        for leg in tmpLegs[1:]:
-            curr = self.curvesDict[leg]
-            title += (' ' + curr.info.get('Key',''))
-        title = 'XMCD Analysis ' + title
+            # Keep plots in the order they were added!
+            curves = [self.dataObjectsDict[leg] for leg in legends]
+            yVals = [curve.y[0] for curve in curves]
+            # xrange is the same for every curve
+            xVals = [curves[0].x[0]]
+        else:
+            yVals = []
+            xVals = []
+        outArray = numpy.vstack([xVals, yVals]).T
+        if not len(outArray):
+            ncols = 0
+        elif len(outArray.shape) > 1:
+            ncols = outArray.shape[1]
+        else:
+            ncols = 1   
+#        for leg in tmpLegs[1:]:
+#            curr = self.curvesDict[leg]
+#            title += (' ' + curr.info.get('Key',''))
         delim = ' '
-        header  = '#S 1 %s'%title + NEWLINE
+        title = 'XMCD Analysis ' + title
+        #Attention: #S %d
+        header  = '#S %d %s'%(scanno,title) + NEWLINE
         header += ('#U00 ' + self.selectionInfo('p', 'Key') + NEWLINE)
         header += ('#U01 ' + self.selectionInfo('m', 'Key') + NEWLINE)
+        # Write Comments
+        if len(comment) > 0:
+            lines = comment.splitlines()[:98]
+            for (idx, line) in enumerate(lines):
+                header += ('#U%.2d %s'%(idx, line) + NEWLINE)
         header += '#N %d'%ncols + NEWLINE
         if ext == '.spec':
             header += ('#L ' + self.getGraphXTitle() + '  ' + '  '.join(legends) + NEWLINE)
         else:
             header += ('#L ' + self.getGraphXTitle() + '  ' + delim.join(legends) + NEWLINE)
 
-        filehandle.write(NEWLINE)
-        filehandle.write(header)
-        for line in outArray:
-            tmp = delim.join(['%f'%num for num in line])
-            filehandle.write(tmp + NEWLINE)
-        filehandle.write(NEWLINE)
-        filehandle.close()
+        for fh in [filehandle, seperateFile]:
+            if fh is not None:
+                fh.write(NEWLINE)
+                fh.write(header)
+                for line in outArray:
+                    tmp = delim.join(['%f'%num for num in line])
+                    fh.write(tmp + NEWLINE)
+                fh.write(NEWLINE)
+                fh.close()
         
-        # Open filehandler for config file
+        # Emit saveOptionsSignal to save config file
         self.saveOptionsSignal.emit(splitext(filename)[0])
     
     def noiseFilter(self, y):
@@ -980,8 +1014,6 @@ class XMCDScanWindow(sw.ScanWindow):
         y = ynew
         self.graph.checky2scale()
         
-
-    
 class XMCDMenu(qt.QMenu):
     def __init__(self,  parent, title=None):
         qt.QMenu.__init__(self,  parent)
@@ -1170,7 +1202,7 @@ class XMCDTreeWidget(qt.QTreeWidget):
         for id in seq:
             if id not in self.identifiers:
                 invalidMsg = qt.QMessageBox(None)
-                invalidMsg.setText('Invalid sequence. Try again.')
+                invalidMsg.setText('Invalid identifier. Try again.')
                 invalidMsg.setStandardButtons(qt.QMessageBox.Ok)
                 invalidMsg.exec_()
                 return
@@ -1179,7 +1211,6 @@ class XMCDTreeWidget(qt.QTreeWidget):
             invalidMsg.setText('Sequence length does not match item count.')
             invalidMsg.setStandardButtons(qt.QMessageBox.Ok)
             invalidMsg.exec_()
-            return
         for (id, item) in zip(seq, sel):
             if id == self.identifiers[-1]:
                 id = ''
@@ -1226,7 +1257,6 @@ class XMCDTreeWidget(qt.QTreeWidget):
             value.sort()
         return out
 
-
 class XMCDWidget(qt.QWidget):
 
     setSelectionSignal = qt.pyqtSignal(object, object)
@@ -1255,6 +1285,7 @@ class XMCDWidget(qt.QWidget):
              {'MotorName2':MotorValue2, ... , 'MotorNameM':MotorValueM}]
         """
         qt.QWidget.__init__(self, parent)
+        self.setWindowIcon(qt.QIcon(IconDict['peak']))
         self.plotWindow = plotWindow
         self.legendList = []
         self.motorsList = []
@@ -1317,16 +1348,16 @@ class XMCDWidget(qt.QWidget):
         self.list.setContextMenu(listContextMenu)
         self.expCBox = qt.QComboBox(self)
         self.expCBox.addItems(
-                        ['Select Experiment',
-                         'ID08: Linear Dichorism',
-                         'ID08: Linear Dichorism (old)',
+                        ['Generic Dichorism',
+                         'ID08: XLD',
+                         'ID08: XLD (old)',
                          'ID08: XMCD',
                          'ID08: XMCD (old)',
-                         'Add new experiment'])
+                         'Add new configuration'])
         self.expCBox.insertSeparator(5)
         
         self.experimentsDict = {
-            'Select Experiment': {
+            'Generic Dichorism': {
                   'xrange': 0,
                   'normalization': 0,
                   'normalizationMethod': 'offsetAndArea',
@@ -1347,14 +1378,14 @@ class XMCDWidget(qt.QWidget):
                   'motor0': 'PhaseD',
                   'motor1': 'oxPS'
             },
-            'ID08: Linear Dichorism (old)': {
+            'ID08: XLD (old)': {
                   'xrange': 0,
                   'normalization': 0,
                   'normalizationMethod': 'offsetAndArea',
                   'motor0': 'PhaseD',
                   'motor1': ''                     
             },
-            'ID08: Linear Dichorism': {
+            'ID08: XLD': {
                   'xrange': 0,
                   'normalization': 0,
                   'normalizationMethod': 'offsetAndArea',
@@ -1388,9 +1419,18 @@ class XMCDWidget(qt.QWidget):
         leftWidget = qt.QWidget(self)
         leftWidget.setLayout(leftLayout)
         
+#        self.resize(1000,200)
+#        self.ScanWindow.sizePolicy().setHorizontalStretch(2)
+        self.ScanWindow.setSizePolicy(qt.QSizePolicy.Minimum, qt.QSizePolicy.Minimum)
         self.splitter = qt.QSplitter(qt.Qt.Horizontal, self)
         self.splitter.addWidget(leftWidget)
         self.splitter.addWidget(self.ScanWindow)
+        stretch = int(leftWidget.width())
+        print self.splitter.indexOf(self.ScanWindow)
+        # If window size changes, only the scan window size changes
+        self.splitter.setStretchFactor(
+                    self.splitter.indexOf(self.ScanWindow),1)
+#        self.splitter.setSizes([200,1000])
         
         mainLayout = qt.QVBoxLayout()
         mainLayout.setContentsMargins(0,0,0,0)
@@ -1410,6 +1450,8 @@ class XMCDWidget(qt.QWidget):
         self.updateTree()
         self.list.sortByColumn(1, qt.Qt.AscendingOrder)
         self._setBeamlineSpecific(self.beamline)
+        
+        self.resize(1000, 200)
 
     def addExperiment(self):
         exp, chk = qt.QInputDialog.\
@@ -1425,9 +1467,9 @@ class XMCDWidget(qt.QWidget):
             if opts.exec_():
                 self.experimentsDict[exp] = opts.getOptions()
                 cBox = self.expCBox
-                new = [cBox.itemText(i) for i in range(cBox.count())][0:-3]
+                new = [cBox.itemText(i) for i in range(cBox.count())][0:-2]
                 new += [exp]
-                new.append('Add new experiment')
+                new.append('Add new configuration')
                 cBox.clear()
                 cBox.addItems(new)
                 cBox.insertSeparator(len(new)-1)
@@ -1456,16 +1498,15 @@ class XMCDWidget(qt.QWidget):
             print '\t',self.experimentsDict[exp]
         except:
             print '\t','no experimentsDict'
-        if exp == 'Add new experiment':
+        if exp == 'Add new configuration':
             self.addExperiment()
             self.updateTree()
-            print '\tHere!'
         elif exp in self.experimentsDict:
             try:
                 self.optsWindow.setOptions(self.experimentsDict[exp])
             except ValueError:
                 self.optsWindow.setOptions(
-                        self.experimentsDict['Select Experiment'])
+                        self.experimentsDict['Generic Dichorism'])
                 return
             self.updateTree()
             # Get motor values from tree
@@ -1474,7 +1515,7 @@ class XMCDWidget(qt.QWidget):
             values1 = numpy.array(
                         self.list.getColumn(3, convertType=float))
             # Calculate p/m selection
-            if exp.startswith('ID08: Linear Dichorism'):
+            if exp.startswith('ID08: XLD'):
                 values = values0
                 mask = numpy.where(numpy.isfinite(values))[0]
                 minmax = values.take(mask)
@@ -1564,6 +1605,11 @@ class XMCDWidget(qt.QWidget):
     def updatePlots(self,
                     newLegends = None,  
                     newMotorValues = None):
+        print self.ScanWindow.height(),
+        print self.ScanWindow.width()
+        print self.splitter.widget(0).height(),
+        print self.splitter.widget(0).width()
+        print self.splitter.sizes()
         # Check if curves in plotWindow changed..
         curves = self.plotWindow.getAllCurves(just_legend=True)
         if curves == self.legendList:
@@ -1576,7 +1622,7 @@ class XMCDWidget(qt.QWidget):
         self.optsWindow.updateMotorList(self.motorNamesList)
         self.updateTree()
         experiment = str(self.expCBox.currentText())
-        if experiment != 'Select Experiment':
+        if experiment != 'Generic Dichorism':
             self.selectExperiment(experiment)
         return
 
@@ -1673,6 +1719,46 @@ class XMCDWidget(qt.QWidget):
                 self.expCBox.activated[qt.QString].emit(option)
                 break
 
+class XMCDFileDialog(qt.QFileDialog):
+    def __init__(self, parent, caption, directory, filter):
+        qt.QFileDialog.__init__(self, parent, caption, directory, filter)
+        
+        saveOptsGB = qt.QGroupBox('Save options', self)
+        self.appendBox = qt.QCheckBox('Append to existing file', self)
+        self.commentBox = qt.QTextEdit('Enter comment', self)
+        
+        mainLayout = self.layout()
+        optsLayout = qt.QGridLayout()
+        optsLayout.addWidget(self.appendBox, 0, 0)
+        optsLayout.addWidget(self.commentBox, 1, 0)
+        saveOptsGB.setLayout(optsLayout)
+        mainLayout.addWidget(saveOptsGB, 4, 0, 1, 3)
+        
+        self.appendBox.stateChanged.connect(self.appendChecked)
+
+    def appendChecked(self, state):
+        if state == qt.Qt.Unchecked:
+            self.setConfirmOverwrite(True)
+            self.setFileMode(qt.QFileDialog.AnyFile)
+        else:
+            self.setConfirmOverwrite(False)
+            self.setFileMode(qt.QFileDialog.ExistingFile)
+
+    @staticmethod
+    def getSaveFileName(parent, caption, directory, filter):
+        self = XMCDFileDialog(parent, caption, directory, filter)
+        self.setAcceptMode(qt.QFileDialog.AcceptSave)
+        append = None
+        comment = None
+        files = []
+        if self.exec_():
+            append  = self.appendBox.isChecked()
+            comment = str(self.commentBox.toPlainText())
+            if comment == 'Enter comment':
+                comment = ''
+            files = [qt.safe_str(fn) for fn in self.selectedFiles()]
+        return (files, append, comment)
+
 def main():
     import sys,  numpy
     app = qt.QApplication(sys.argv)
@@ -1698,6 +1784,11 @@ def main():
     swin.dataObjectsDict['Curve1 zratio1'].info['Key'] = '123.1'
 
     w = XMCDWidget(None, swin, 'ID08', nSelectors = 2)
+#    cap = qt.QString('Save file somewhere')
+#    dir = qt.QString(r'/home/truter/lab')
+#    fil = qt.QString('Text files (*.txt);;All files (*.*)')
+#    res = XMCDFileDialog.getSaveFileName(None, cap, dir, fil)
+#    print res
     w.show()
     app.exec_()
 

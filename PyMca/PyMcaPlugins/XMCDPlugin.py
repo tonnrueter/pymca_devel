@@ -10,6 +10,7 @@ except ImportError:
     import XMCDWindow
 
 from platform import node as gethostname
+import PyMca.PyMca_Icons as PyMca_Icons
     
 DEBUG = True
 class XMCDAnalysis(Plugin1DBase.Plugin1DBase):
