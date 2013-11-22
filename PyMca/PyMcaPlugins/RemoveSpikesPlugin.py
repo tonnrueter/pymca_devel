@@ -40,18 +40,18 @@ except ImportError:
 from PyMca import PyMcaQt as qt
 import numpy
     
-DEBUG = False
+DEBUG = 0
 class RemoveSpikes(Plugin1DBase.Plugin1DBase):
     def __init__(self,  plotWindow,  **kw):
         Plugin1DBase.Plugin1DBase.__init__(self,  plotWindow,  **kw)
         self.methodDict = {
             'Apply to active curve':
                 [self.removeSpikesActive,
-                 'Remove spikes from active curve',
+                 'Apply sliding median filter to active curve',
                  None],
             'Apply to all curves':
                 [self.removeSpikesAll,
-                 'Remove spikes from all curves',
+                 'Apply sliding median filter to all curves',
                  None],
             'Configure median filter':
                 [self.configureFilter,
@@ -144,13 +144,13 @@ class RemoveSpikes(Plugin1DBase.Plugin1DBase):
                 self.width = 9
             if not (self.width%2):
                 self.width += 1
-            print buttonActive.isChecked()
-            print buttonAll.isChecked()
             if buttonActive.isChecked():
-                print 'ActiveChecked'
+                if DEBUG:
+                    print('ActiveChecked')
                 self.removeSpikesActive()
             if buttonAll.isChecked():
-                print 'AllChecked'
+                if DEBUG:
+                    print('AllChecked')
                 self.removeSpikesAll()
 
     def removeSpikesAll(self):
@@ -170,7 +170,7 @@ class RemoveSpikes(Plugin1DBase.Plugin1DBase):
                 spectra = [active]
         else:
             spectra = self._plotWindow.getAllCurves()
-        for (i,spec) in enumerate(spectra):
+        for (idx, spec) in enumerate(spectra):
             x, y, legend, info = spec
             filtered = medfilt1d(y, length)
             diff = filtered-y
@@ -179,7 +179,7 @@ class RemoveSpikes(Plugin1DBase.Plugin1DBase):
             sigma = numpy.sqrt(sigma.sum()/len(sigma))
             ynew = numpy.where(abs(diff) > threshold * sigma, filtered, y)
             legend = info.get('selectionlegend','') + ' SR'
-            if (i==0) and (len(spectra)!=1):
+            if (idx==0) and (len(spectra)!=1):
                 self.addCurve(x,ynew,legend,info,replace=True) 
             else:
                 self.addCurve(x,ynew,legend,info)

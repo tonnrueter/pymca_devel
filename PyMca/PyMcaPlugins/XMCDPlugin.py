@@ -1,23 +1,15 @@
-try:
-    from PyMca import Plugin1DBase
-except ImportError:
-    from . import Plugin1DBase
-    
-try:
-    from PyMca.PyMcaPlugins import XMCDWindow
-except ImportError:
-    print("XMCDWindow importing from somewhere else")
-    import XMCDWindow
+import PyMca.PyMca_Icons as PyMca_Icons
+from PyMca import Plugin1DBase
+from . import XMCDWindow
 
 from platform import node as gethostname
-import PyMca.PyMca_Icons as PyMca_Icons
     
-DEBUG = True
+DEBUG = 0
 class XMCDAnalysis(Plugin1DBase.Plugin1DBase):
     def __init__(self,  plotWindow,  **kw):
         Plugin1DBase.Plugin1DBase.__init__(self,  plotWindow,  **kw)
         self.methodDict = {}
-        text = 'Sort plots for motor value.'
+        text = 'Perform grouped operations as function of motor value.'
         function = self.showXMCDWindow
         icon = None
         info = text
@@ -55,7 +47,7 @@ class XMCDAnalysis(Plugin1DBase.Plugin1DBase):
                 beamline = 'ID08'
                 break
         if DEBUG:
-            print '_createWidget -- beamline = "%s"'%beamline
+            print('_createWidget -- beamline = "%s"' % beamline)
         parent = None
         self.widget = XMCDWindow.XMCDWidget(parent,
                                               self._plotWindow,
