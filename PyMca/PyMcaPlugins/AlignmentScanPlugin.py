@@ -43,7 +43,7 @@ except ImportError:
 
 from PyMca import SpecfitFuns
 
-DEBUG = True
+DEBUG = 0
 class AlignmentWidget(qt.QDialog):
     def __init__(self, parent, ddict, plugin):
         qt.QDialog.__init__(self, parent)
@@ -183,13 +183,20 @@ class AlignmentWidget(qt.QDialog):
             msg.setText('Unable to read shifts form file \'%s\''%filename)
             msg.exec_()
             return
-        try:
-            self.setDict(inDict['Shifts'])
-        except:
-            msg = qt.QMessageBox()
-            msg.setWindowTitle('FFTAlignment Load Error')
-            msg.setText('Configuration file \'%s\' corruted' % filename)
-            msg.exec_()
+        if 'Shifts' not in inDict.keys():
+            # Only if the shift file consists exclusively of ShiftList
+            orderedLegends = [legend for legend in self.plugin.getOrder()]
+            try:
+                shiftList = inDict['Ordered Shifts']['ShiftList']
+            except KeyError:
+                msg = qt.QMessageBox()
+                msg.setWindowTitle('FFTAlignment Load Error')
+                msg.setText('No shift information found in file \'%s\''%filename)
+                msg.exec_()
+            ddict = dict(zip(orderedLegends, shiftList))
+        else:
+            ddict = (inDict['Shifts'])
+        self.setDict(ddict)
 
     def saveDict(self):
         saveDir = PyMcaDirs.outputDir
@@ -203,15 +210,17 @@ class AlignmentWidget(qt.QDialog):
                             single=True)[0]
         except IndexError:
             # Returned list is empty
-            return
-        if DEBUG:
-            print('saveOptions -- Filename: "%s"' % filename)
+            return False
         if len(filename) == 0:
             return False
         if not str(filename).endswith('.shift'):
             filename += '.shift'
+        if DEBUG:
+            print('saveOptions -- Filename: "%s"' % filename)
         outDict = ConfigDict.ConfigDict()
-        outDict['Shifts'] = self.getDict()
+        ddict = self.getDict()
+        outDict['Shifts'] = ddict
+        outDict['ShiftList'] = [ddict[legend] for legend in self.plugin.getOrder()]
         try:
             outDict.write(filename)
         except IOError:
@@ -240,12 +249,19 @@ class AlignmentWidget(qt.QDialog):
         return ddict
     
     def setDict(self, ddict):
+        # Conserve order in which scans are added to plot window
+        #dkeys = sorted(ddict.keys())
+        tmp = self.plugin.getOrder()
+        dkeys = [item for item in tmp if item in ddict.keys()]
+        dvals = ['%f'%ddict[k] for k in dkeys]
+        
         self.shiftTab.clear()
         self.shiftTab.setHorizontalHeaderLabels(['Legend','Shift'])
         self.shiftTab.setColumnCount(2)
-        self.shiftTab.setRowCount(len(ddict))
-        dkeys = sorted(ddict.keys())
-        dvals = ['%f'%ddict[k] for k in dkeys]
+        self.shiftTab.setRowCount(len(dkeys))
+        if len(ddict) == 0:
+            return
+
         for j, dlist in enumerate([dkeys, dvals]):
             for i in range(len(dlist)):
                 if j == 0:
@@ -361,7 +377,11 @@ class AlignmentScanPlugin(Plugin1DBase.Plugin1DBase):
         '''
         self.shiftDict = self.alignmentMethod()
         return self.shiftDict
-        
+
+    def getOrder(self):
+        ret = [legend for (x,y,legend,info) in self._plotWindow.getAllCurves()]
+        return ret
+
     # BEGIN Alignment Methods
     def calculateShiftsFitDerivative(self):
         return self.calculateShiftsFit(derivative=True)
@@ -606,8 +626,10 @@ class AlignmentScanPlugin(Plugin1DBase.Plugin1DBase):
             curves = self.getAllCurves()
         
         # Sort shiftDict, curves
-        shiftDictKeys = sorted(self.shiftDict.keys())
-        curves = sorted(curves, key=lambda curve: curve[2])
+        shiftDictKeys = sorted(self.shiftDict.keys()) # Contains legends of shifts
+        #curves = sorted(curves, key=lambda curve: curve[2])
+        sortedLegends = sorted([legend for (x,y,legend,info) in curves])
+        #sortedCurves  = sorted(curves, key=lambda curve: curve[2]) # Contains curves from plot window
         
         if len(shiftDictKeys) != len(curves):
             msg = qt.QMessageBox(None)
@@ -621,23 +643,27 @@ class AlignmentScanPlugin(Plugin1DBase.Plugin1DBase):
             
             if msg.exec_() != qt.QMessageBox.Ok:
                 return False
-    
+        
+        # Ensure correct assign between shift values and
+        # curves that are currently present in plot window
+        assignmentDict = dict(zip(sortedLegends, shiftDictKeys))
+
         if DEBUG:
             print('applyShifts -- Shifting ...')
         for idx, (x,y,legend,info) in enumerate(curves):
             selectionlegend = info.get('selectionlegend',legend)
-            key = shiftDictKeys[idx]
-            shift = self.shiftDict.get(key,float('NaN'))
+            shiftLegend = assignmentDict[legend]
+            shift = self.shiftDict[shiftLegend]
             if shift is None:
                 if DEBUG:
-                    print('Curve \'%s\' not found in shiftDict\n%s'\
+                    print('\tCurve \'%s\' not found in shiftDict\n%s'\
                           %(legend,str(self.shiftDict)))
                 continue
             if shift == float('NaN'):
                 if DEBUG:
-                    print('Curve \'%s\' has NaN shift'%selectionlegend)
+                    print('\tCurve \'%s\' has NaN shift'%selectionlegend)
                 continue
-
+            
             # Limit shift to zoomed in area
             xmin, xmax = self.getGraphXLimits()
             mask = numpy.nonzero((xmin<=x) & (x<=xmax))[0]
@@ -653,8 +679,10 @@ class AlignmentScanPlugin(Plugin1DBase.Plugin1DBase):
                 replace, replot = False, True
             else:
                 replace, replot = False, False
+            # Check if scan number is adopted by new curve    
+            #print "applyShifts -- %s -> '%s'"%(legend,info.get('Key'))
             self.addCurve(xShifted, yShifted, 
-                          (selectionlegend + ' SHIFT'), 
+                          (selectionlegend + ' SHIFT'),
                           info,
                           replace, replot)
         return True
@@ -772,6 +800,7 @@ class AlignmentScanPlugin(Plugin1DBase.Plugin1DBase):
             idx = numpy.nonzero((xproc[1:] > xproc[:-1]))[0]
             xproc = numpy.take(xproc, idx)
             yproc = numpy.take(yproc, idx)
+            print "getAllCurves -- %s -> '%s'"%(legend,info.get('Key'))
             processedCurves += [(xproc, yproc, legend, info)]
         return processedCurves
 
