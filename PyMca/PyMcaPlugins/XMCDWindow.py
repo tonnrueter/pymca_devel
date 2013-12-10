@@ -1329,6 +1329,21 @@ class XMCDWidget(qt.QWidget):
         self.analysisWindow = XMCDScanWindow(origin=plotWindow, 
                                               parent=None)
         self.optsWindow = XMCDOptions(self, self.motorNamesList)
+        
+        helpFileName = r'/home/truter/lab/XMCD_infotext.html'
+        self.helpFileBrowser = qt.QTextBrowser()
+        self.helpFileBrowser.setLineWrapMode(qt.QTextEdit.FixedPixelWidth)
+        self.helpFileBrowser.setLineWrapColumnOrWidth(500)
+        self.helpFileBrowser.resize(500,300)
+        try:
+            helpFileHandle = open(helpFileName)
+            helpFileHTML = helpFileHandle.read()
+            helpFileHandle.close()
+            self.helpFileBrowser.setHtml(helpFileHTML)
+        except IOError:
+            if DEBUG:
+                print('XMCDWindow -- init: Unable to read help file')
+            self.helpFileBrowser = None
                                               
         self.selectionDict = {'D': [],
                               'B': [],
@@ -1342,6 +1357,11 @@ class XMCDWidget(qt.QWidget):
         buttonOptions.setToolTip(
             'Set normalization and interpolation\n'
            +'method and motors shown')
+           
+        buttonInfo = qt.QPushButton('Info')
+        buttonInfo.setToolTip(
+            'Shows a describtion of the plugins features\n'
+           +'and gives instructions on how to use it')
                                 
         updatePixmap  = qt.QPixmap(IconDict["reload"])
         buttonUpdate  = qt.QPushButton(
@@ -1473,6 +1493,7 @@ class XMCDWidget(qt.QWidget):
         topLayout  = qt.QHBoxLayout()
         topLayout.addWidget(buttonUpdate)
         topLayout.addWidget(buttonOptions)
+        topLayout.addWidget(buttonInfo)
         topLayout.addWidget(qt.HorizontalSpacer(self))
         topLayout.addWidget(self.expCBox)
 
@@ -1508,6 +1529,7 @@ class XMCDWidget(qt.QWidget):
         self.optsWindow.accepted[()].connect(self.updateTree)
         buttonUpdate.clicked.connect(self.updatePlots)
         buttonOptions.clicked.connect(self.showOptionsWindow)
+        buttonInfo.clicked.connect(self.showInfoWindow)
 
         self.updateTree()
         self.list.sortByColumn(1, qt.Qt.AscendingOrder)
@@ -1549,6 +1571,18 @@ class XMCDWidget(qt.QWidget):
         if self.optsWindow.exec_():
             options = self.optsWindow.getOptions()
             self.analysisWindow.processOptions(options)
+
+    def showInfoWindow(self):
+        if self.helpFileBrowser is None:
+            msg = qt.QMessageBox()
+            msg.setWindowTitle('XLD/XMCD Error')
+            msg.setText('No help file found.'%helpfile)
+            msg.exec_()
+            return
+        else:
+            self.helpFileBrowser.show()
+            self.helpFileBrowser.raise_()
+        
 
 # Implement new assignment routines here BEGIN
     def selectExperiment(self, exp):
@@ -1880,31 +1914,42 @@ def main():
     app = qt.QApplication([])
     
     # Create dummy ScanWindow
-    swin = sw.ScanWindow()
-    info0 = {'xlabel': 'foo',
-             'ylabel': 'arb',
-             'MotorNames': 'oxPS PhaseA Phase BRUKER CRYO OXFORD', 
-             'MotorValues': '1 -6.27247094 -3.11222732 6.34150808 -34.75892563 21.99607165'}
-    info1 = {'MotorNames': 'PhaseD oxPS PhaseA Phase BRUKER CRYO OXFORD',
-             'MotorValues': '0.470746882688 0.25876374531 -0.18515967 -28.31216591 18.54513221 -28.09735532 -26.78833172'}
-    info2 = {'MotorNames': 'PhaseD oxPS PhaseA Phase BRUKER CRYO OXFORD',
-             'MotorValues': '-9.45353059 -25.37448851 24.37665651 18.88048044 -0.26018745 2 0.901968648111 '}
-    x = numpy.arange(100.,1100.)
-    y0 =  10*x + 10000.*numpy.exp(-0.5*(x-500)**2/400) + 1500*numpy.random.random(1000.)
-    y1 =  10*x + 10000.*numpy.exp(-0.5*(x-600)**2/400) + 1500*numpy.random.random(1000.)
-    y2 =  10*x + 10000.*numpy.exp(-0.5*(x-400)**2/400) + 1500*numpy.random.random(1000.)
-    
-    swin.newCurve(x, y2, legend="Curve2", xlabel='ene_st2', ylabel='Ihor', info=info2, replot=False, replace=False)
-    swin.newCurve(x, y0, legend="Curve0", xlabel='ene_st0', ylabel='Iver', info=info0, replot=False, replace=False)
-    swin.newCurve(x, y1, legend="Curve1", xlabel='ene_st1', ylabel='Ihor', info=info1, replot=False, replace=False)
-    
-    # info['Key'] is overwritten when using newCurve
-    swin.dataObjectsDict['Curve2 Ihor'].info['Key'] = '1.1'
-    swin.dataObjectsDict['Curve0 Iver'].info['Key'] = '34.1'
-    swin.dataObjectsDict['Curve1 Ihor'].info['Key'] = '123.1'
+#    swin = sw.ScanWindow()
+#    info0 = {'xlabel': 'foo',
+#             'ylabel': 'arb',
+#             'MotorNames': 'oxPS PhaseA Phase BRUKER CRYO OXFORD', 
+#             'MotorValues': '1 -6.27247094 -3.11222732 6.34150808 -34.75892563 21.99607165'}
+#    info1 = {'MotorNames': 'PhaseD oxPS PhaseA Phase BRUKER CRYO OXFORD',
+#             'MotorValues': '0.470746882688 0.25876374531 -0.18515967 -28.31216591 18.54513221 -28.09735532 -26.78833172'}
+#    info2 = {'MotorNames': 'PhaseD oxPS PhaseA Phase BRUKER CRYO OXFORD',
+#             'MotorValues': '-9.45353059 -25.37448851 24.37665651 18.88048044 -0.26018745 2 0.901968648111 '}
+#    x = numpy.arange(100.,1100.)
+#    y0 =  10*x + 10000.*numpy.exp(-0.5*(x-500)**2/400) + 1500*numpy.random.random(1000.)
+#    y1 =  10*x + 10000.*numpy.exp(-0.5*(x-600)**2/400) + 1500*numpy.random.random(1000.)
+#    y2 =  10*x + 10000.*numpy.exp(-0.5*(x-400)**2/400) + 1500*numpy.random.random(1000.)
+#    
+#    swin.newCurve(x, y2, legend="Curve2", xlabel='ene_st2', ylabel='Ihor', info=info2, replot=False, replace=False)
+#    swin.newCurve(x, y0, legend="Curve0", xlabel='ene_st0', ylabel='Iver', info=info0, replot=False, replace=False)
+#    swin.newCurve(x, y1, legend="Curve1", xlabel='ene_st1', ylabel='Ihor', info=info1, replot=False, replace=False)
+#    
+#    # info['Key'] is overwritten when using newCurve
+#    swin.dataObjectsDict['Curve2 Ihor'].info['Key'] = '1.1'
+#    swin.dataObjectsDict['Curve0 Iver'].info['Key'] = '34.1'
+#    swin.dataObjectsDict['Curve1 Ihor'].info['Key'] = '123.1'
+#
+#    w = XMCDWidget(None, swin, 'ID08', nSelectors = 5)
+#    w.show()
 
-    w = XMCDWidget(None, swin, 'ID08', nSelectors = 5)
-    w.show()
+    helpFileBrowser = qt.QTextBrowser()
+    helpFileBrowser.setLineWrapMode(qt.QTextEdit.FixedPixelWidth)
+    helpFileBrowser.setLineWrapColumnOrWidth(500)
+    helpFileBrowser.resize(520,400)
+    helpFileHandle = open('/home/truter/lab/XMCD_infotext.html')
+    helpFileHTML = helpFileHandle.read()
+    helpFileHandle.close()
+    helpFileBrowser.setHtml(helpFileHTML)
+    helpFileBrowser.show()
+
     app.exec_()
 
 if __name__ == '__main__':

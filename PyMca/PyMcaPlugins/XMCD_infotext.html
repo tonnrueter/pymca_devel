@@ -1,0 +1,464 @@
+<html>
+<head>
+    <style type="text/css">
+        body {
+            background-color:white;
+            width:400px
+        }
+        th, tr, td {
+            text-align:left;
+            vertical-align:bottom;
+            border: 2px solid #CCCCCC;
+            border-style:solid;
+        }
+        table {
+            font-family:"Monospace";
+            font-size:75%;
+            border: 2px solid grey;
+            border-collapse:collapse;
+            width:390px;
+            margin-left:0px;
+            margin-right:0px;
+            margin-top:10px;
+            margin-bottom:10px;
+        }
+        div.indent {
+            color:#333333;
+            text-align:justify;
+            margin-left:20px;
+            margin-right:20px;
+            margin-top:20px;
+            margin-bottom:20px;
+        }
+        div.main {
+            text-align:justify;
+            margin-left:5px;
+            margin-right:5px;
+            margin-top:5px;
+            margin-bottom:20px;
+        }
+        div.elem {
+            text-align:left;
+            margin-left:5px;
+            margin-right:5px;
+            margin-top:5px;
+            margin-bottom:5px;
+        }
+        div.code {
+            color:#333333;
+            background:#EEEEEE;
+            text-align:left;
+            margin-left:20px;
+            margin-right:20px;
+            margin-top:20px;
+            margin-bottom:20px;
+        }
+        up {
+            text-align:right;
+            margin-right:5px;
+        }
+        div.highlight .hll { background-color: #ffffcc }
+        div.highlight      { background: #f8f8f8; }
+        div.highlight .c   { color: #408080; font-style: italic } /* Comment */
+        div.highlight .err { border: 1px solid #FF0000 } /* Error */
+        div.highlight .k  { color: #008000; font-weight: bold } /* Keyword */
+        div.highlight .o  { color: #666666 } /* Operator */
+        div.highlight .cm { color: #408080; font-style: italic } /* Comment.Multiline */
+        div.highlight .cp { color: #BC7A00 } /* Comment.Preproc */
+        div.highlight .c1 { color: #408080; font-style: italic } /* Comment.Single */
+        div.highlight .cs { color: #408080; font-style: italic } /* Comment.Special */
+        div.highlight .gd { color: #A00000 } /* Generic.Deleted */
+        div.highlight .ge { font-style: italic } /* Generic.Emph */
+        div.highlight .gr { color: #FF0000 } /* Generic.Error */
+        div.highlight .gh { color: #000080; font-weight: bold } /* Generic.Heading */
+        div.highlight .gi { color: #00A000 } /* Generic.Inserted */
+        div.highlight .go { color: #808080 } /* Generic.Output */
+        div.highlight .gp { color: #000080; font-weight: bold } /* Generic.Prompt */
+        div.highlight .gs { font-weight: bold } /* Generic.Strong */
+        div.highlight .gu { color: #800080; font-weight: bold } /* Generic.Subheading */
+        div.highlight .gt { color: #0040D0 } /* Generic.Traceback */
+        div.highlight .kc { color: #008000; font-weight: bold } /* Keyword.Constant */
+        div.highlight .kd { color: #008000; font-weight: bold } /* Keyword.Declaration */
+        div.highlight .kn { color: #008000; font-weight: bold } /* Keyword.Namespace */
+        div.highlight .kp { color: #008000 } /* Keyword.Pseudo */
+        div.highlight .kr { color: #008000; font-weight: bold } /* Keyword.Reserved */
+        div.highlight .kt { color: #B00040 } /* Keyword.Type */
+        div.highlight .m { color: #666666 } /* Literal.Number */
+        div.highlight .s { color: #BA2121 } /* Literal.String */
+        div.highlight .na { color: #7D9029 } /* Name.Attribute */
+        div.highlight .nb { color: #008000 } /* Name.Builtin */
+        div.highlight .nc { color: #0000FF; font-weight: bold } /* Name.Class */
+        div.highlight .no { color: #880000 } /* Name.Constant */
+        div.highlight .nd { color: #AA22FF } /* Name.Decorator */
+        div.highlight .ni { color: #999999; font-weight: bold } /* Name.Entity */
+        div.highlight .ne { color: #D2413A; font-weight: bold } /* Name.Exception */
+        div.highlight .nf { color: #0000FF } /* Name.Function */
+        div.highlight .nl { color: #A0A000 } /* Name.Label */
+        div.highlight .nn { color: #0000FF; font-weight: bold } /* Name.Namespace */
+        div.highlight .nt { color: #008000; font-weight: bold } /* Name.Tag */
+        div.highlight .nv { color: #19177C } /* Name.Variable */
+        div.highlight .ow { color: #AA22FF; font-weight: bold } /* Operator.Word */
+        div.highlight .w { color: #bbbbbb } /* Text.Whitespace */
+        div.highlight .mf { color: #666666 } /* Literal.Number.Float */
+        div.highlight .mh { color: #666666 } /* Literal.Number.Hex */
+        div.highlight .mi { color: #666666 } /* Literal.Number.Integer */
+        div.highlight .mo { color: #666666 } /* Literal.Number.Oct */
+        div.highlight .sb { color: #BA2121 } /* Literal.String.Backtick */
+        div.highlight .sc { color: #BA2121 } /* Literal.String.Char */
+        div.highlight .sd { color: #BA2121; font-style: italic } /* Literal.String.Doc */
+        div.highlight .s2 { color: #BA2121 } /* Literal.String.Double */
+        div.highlight .se { color: #BB6622; font-weight: bold } /* Literal.String.Escape */
+        div.highlight .sh { color: #BA2121 } /* Literal.String.Heredoc */
+        div.highlight .si { color: #BB6688; font-weight: bold } /* Literal.String.Interpol */
+        div.highlight .sx { color: #008000 } /* Literal.String.Other */
+        div.highlight .sr { color: #BB6688 } /* Literal.String.Regex */
+        div.highlight .s1 { color: #BA2121 } /* Literal.String.Single */
+        div.highlight .ss { color: #19177C } /* Literal.String.Symbol */
+        div.highlight .bp { color: #008000 } /* Name.Builtin.Pseudo */
+        div.highlight .vc { color: #19177C } /* Name.Variable.Class */
+        div.highlight .vg { color: #19177C } /* Name.Variable.Global */
+        div.highlight .vi { color: #19177C } /* Name.Variable.Instance */
+        div.highlight .il { color: #666666 } /* Literal.Number.Integer.Long */
+    </style>
+</head>
+
+<body TEXT=#000000 BGCOLOR=#FFFFFF ALINK=#ff6600 LINK=#0000cc VLINK=#0000cc 
+marginwidth=10 marginheight=10  topmargin=10 leftmargin=10>
+
+<a NAME=Up></a>
+<H3>XLD/XMCD Analysis HOWTO</H3>
+
+<H4>
+Contents
+</H4>
+<br>
+<a href=#Usage>1. Usage</a><br>
+<a href=#Description>2. Description</a><br>
+&nbsp;&nbsp;&nbsp;<a href=#Toprow>2.1 Top row</a><br>
+&nbsp;&nbsp;&nbsp;<a href=#Table>2.2 Table</a><br>
+&nbsp;&nbsp;&nbsp;<a href=#AnalysisWindow>2.3 Analysis window</a><br>
+<a href=#EditAutoAssign>3. Extend the automatic assignment</a><br>
+&nbsp;&nbsp;&nbsp;<a href=#EditExpDict>3.1 Edit the experiments dictionary</a><br>
+&nbsp;&nbsp;&nbsp;<a href=#EditComboBox>3.2 Edit the drop down menu</a><br>
+&nbsp;&nbsp;&nbsp;<a href=#EditSelectExp>3.3 Edit the selectExperiments function</a><br>
+<br>
+
+<H4>
+Synopsis
+</H4>
+
+<div class='main'>
+XLD/XMCD measurements as performed at Beamlines ID08 and ID12 of the ESRF
+probe the sample with x-rays of two different polarizations. From two spectra
+with different polarizations, one calculates the difference spectrum (the
+XLD/XMCD spectrum) as well as the average spectrum (XAS spectrum). The present
+plugin aims to ease the evaluation process.<br>
+<br>
+To assign the recorded spectra into two groups (labeled 'A' and 'B') depending
+on their polarization, the plugin displays meta data obtained from the spec file
+and provides heuristics to automate the assignment process. A seperate plot
+window allows a preview on calculated XLD/XMCD spectra. Several options relevant
+to the treatment of the data can be specified and saved. Calculated spectra can
+be exported into spec-files.
+</div>
+
+<H3><a NAME=Usage>
+1. Usage
+</a></H3>
+
+<div class='main'>
+From the open spec-File, select the relevant scans in the scan selection window
+on the left side of your PyMca session. Assign the relevant counters to the
+respective axes and load the scans in the plot window on the right. Load the plugin
+from the plugin menu (gearbox item).<br>
+<br>
+The selected spectra now appear in the table of the plugin. By right-clicking in 
+the table, the spectra can be assigned to groups 'A' or 'B'.
+Per default, the spectra remain unassigned as indicated by the drop down menu showing
+the entry 'Generic dichorism'.<br>
+<br>
+Once a selection is made, the result is displayed in the analysis window.
+</div>
+
+<H3><a NAME=Description>
+2. Description
+</a></H3>
+
+<div class='main'>
+The plugin consists of three main elements: the top row of buttons, the table
+listing the spectra and the analysis window.
+</div>
+
+<H4><a NAME=Toprow>
+2.1 Top row
+</a></H4>
+
+<div class='main'>
+The top row contains the following buttons in order from left to right: Update
+Button, Options Button and Experiment Selection.
+</div>
+
+<div class=elem><i>Update Button</i></div>
+    <div class='indent'>
+    Loads plots from the main window of the PyMca session into the plugin.
+    </div>
+
+<div class=elem><i>Options Button</i></div>
+    <div class='indent'>
+    Allows to specify the plugin behaviour during the analysis. One can select
+    if and when a normalization shall be executed, the normalization method can be 
+    specified.<br>
+    <br>
+    The plugin performs an interpolation in case of unevenly spaced data, the details
+    of which can be defined in the "Interpolation x-range" section.<br>
+    The selected options can be saved in a config file. If the result of a XLD/XMCD
+    analysis is saved in the analysis window, the current configuration is automatically
+    saved in a seperate file.
+    </div>
+
+<div class='elem'><i>Experiment Selection:</i></div>
+    <div class='indent'>
+    The options for the experiments carried out at beamlines ID08 and ID12 are 
+    embedded in the plugin. Selecting one of the experiments sets these options
+    and divides the spectra automatically groups A and B.<br>
+   
+    A new experimental configuration can be added using the 'Add new configuration'
+    option. A window will open and ask the user to name the configuration.
+    Once accepted, an option window is opened and can be used to define the experimental
+    configuration. This can be done by either loading an exisiting configuration
+    or by specifying it by hand.</br>
+   
+    The new experimental configuration can now be selected in the drop down menu. It
+    sets all options as specified, however the spectra assignment into groups has
+    still to be done by hand.
+    </div>
+
+<H4><a NAME=Table>
+2.2 Table
+</a></H4>
+
+<div class='main'>
+The table, positioned beneath the top row, shows the spectra that are included
+in the XLD/XMCD analysis. The table shows the group to which a curve is assigned,
+the curves' legend, the scan number and the counter used during the analysis. The
+remaining columns display settings of various physical or virtual motors that were
+recorded during the course of the measurement and stored in the meta data of the
+spec file.
+Every column of the table can be used to sort it with respect to the values in this
+column by double clicking the the respective header section.<br>
+<br>
+Right click on the table provides the user with a context menu with the following
+options:
+</div>
+
+<div class='elem'><i>Perform Analysis</i></div>
+    <div class='indent'>
+    Although most calculation is performed automatically upon selection of a set
+    of scans, selecting this forces the plugin to recalculate the XLD/XMCD spectrum.
+    </div>
+
+<div class='elem'><i>Set as A</i> resp. <i>Set as B</i></div>
+    <div class='indent'>
+    Assigns a scan selected in the table to the respective group and triggers a
+    recalculation of the XLD/XMCD Analysis.
+    </div>
+    
+<div class='elem'><i>Enter sequence</i></div>
+    <div class='indent'>
+    Opens a window and allows to enter a sequence of letters ('A', 'B', 'D'). The
+    spectra in the table are sorted after their scan number and assigned into 
+    groups 'A' and 'B' based on the sequence, 'D' excludes a spectrum from the selection.
+    If no scan number is present, the spectra remain unsorted.
+    The length of the sequence does not need to match the number of spectra. If the
+    length of the sequence is smaller than the number of spectra, the plugin assmues
+    the entered sequence as a pattern and repeats it.
+    </div>
+    
+<div class='elem'><i>Remove selection</i></div>
+    <div class='indent'>
+    Removes a scan from the selection, effectively setting its group to 'D'
+    </div>
+
+<div class='elem'><i>Invert selection</i></div>
+    <div class='indent'>
+    Selects scans in the table, that are not selected yet and deselects the selected
+    scans.
+    </div>
+    
+<div class='elem'><i>Remove curves</i></div>
+    <div class='indent'>
+    Removes curves from the table and the plot window in the main application.
+    </div>
+
+<H4><a NAME=AnalysisWindow>
+2.3 Analysis Window
+</a></H4>
+
+<div class='main'>
+The analysis window beneath the table shows the result of the XLD/XMCD analysis. Four
+curves are displayed: the arithmetic averages over groups A and B, the XAS spectrum 
+(an arithmetic average over the averages of groups A and B) and the difference spectrum
+(group B - group A) called the XMCD spectrum.<br>
+<br>
+Notice that the XMCD spectrum usually is not in the same order of magnitude as the average
+spectra and the XAS spectrum. Thus, the XMCD spectrum is plotted to the secondary y axis
+on the right. In order to hide individual spectra, one can right-click on the legend and 
+select 'Hide curve'.<br>
+<br>
+In the analysis window behaves exactly like the plot window of the main application. The
+plot can be zoomed and the spectra can be manipulated using the usual tools of PyMca. Only
+the save routine has been modified to the specific demands of XLD/XMCD analysis.
+</div>
+
+<div class='elem'><i>Save procedure</i></div>
+    <div class='indent'>
+    The save icon in the analysis window allows the users to save all results of the XLD/XMCD
+    analysis at once in a single spec file. The save dialog also allows to enter a comment
+    that will be written in the spec file. If multiple datasets are analyzed consecutively,
+    the results can be still saved in a single spec file by selecting the 'Append to existing
+    file' option. Every individual scan is saved in a seperate file, too. Therefore, the
+    original filename is extended by an underscore and the number of scans already present in
+    the file to which the analysis is appended to.
+    </div>
+    
+<div class='elem'>Buttons <i>Add, Add all, Replace </i>and<i> Replace All</i></div>
+    <div class='indent'>
+    Allow to push the resulting spectra from the plugin window to the plot window of the main
+    application. While 'Add' and 'Replace' only affect the active curve in the plugin plot
+    window, 'Add all' and 'Replace all' push all curves of the analysis to the main application.
+    </div>
+
+<H4><a NAME=EditAutoAssign>
+3. Extend the automatic assignment
+</a></H4>
+
+<div class='main'>
+The scope of this paragraph is to explain the additions to the source code necessary to make to
+define a new experiment. The paragraph assumes entry level knowledge of the Python programming
+language.
+<br>
+Data measured on beamline ID08 or ID12 of the ESRF that is saved in spec files can automatically 
+be assigned to one of groups 'A' or 'B'. By selecting one of the experiments from the drop down
+menu in the top row, the XLD/XMCD Plugin sets the motors resp. counters controlling the polarization
+in the options menu. This displays the respective values in the plugins table. To achieve the
+automatic assignment, the plugin reads the displayed values and guesses the affiliation of a
+spectrum based on a set of rules.
+</div>
+
+<H4><a NAME=EditExpDict>
+3.1 Edit the experiments dictionary
+</a></H4>
+
+<div class='main'>
+The experiments dictionary contains the settings specific to an experiments. The options concern
+the normalization settings and method, the interpolation settings and most importantly the motors
+on which the assignment depends.
+<br>
+The following code fragment shows the examplary entry 'Generic Dichorism' in the experiments
+dictionary.
+</div>
+
+<div class="highlight"><pre><span class="bp">self</span><span class="o">.</span><span class="n">experimentsDict</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s">&#39;Generic Dichorism&#39;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="s">&#39;xrange&#39;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+          <span class="s">&#39;normalization&#39;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+          <span class="s">&#39;normalizationMethod&#39;</span><span class="p">:</span> <span class="s">&#39;offsetAndArea&#39;</span><span class="p">,</span>
+          <span class="s">&#39;motor0&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+          <span class="s">&#39;motor1&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+          <span class="s">&#39;motor2&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+          <span class="s">&#39;motor3&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+          <span class="s">&#39;motor4&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span>
+    <span class="p">},</span>
+    <span class="p">...</span>
+<span class="p">}</span>
+</div>
+
+<div class='main'>
+Notice that every experiment is represented by a dictionary itself, with the different options
+as keys and the respective settings as values. Valid values for each option, as well as the
+necessary types are shown in the following table.
+
+<table>
+    <colgroup>
+       <col span="1" style="width: 15%;">
+       <col span="1" style="width: 15%;">
+       <col span="1">
+    </colgroup>
+    <tr>
+    <th text-align='left'>Option</th>
+    <th>Type</th>
+    <th>Values: Explanation</th>
+    </tr>
+    <tr>
+    <td>xrange</td>
+    <td>Int</td>
+    <td>
+    <b>0</b>: First curve in sequence<br>
+    <b>1</b>: Active curve<br>
+    <b>2</b>: Equidistant x-range</td>
+    </tr>
+    <tr>
+    <td>normalization</td>
+    <td>Int</td>
+    <td>
+    <b>0</b>: No normalization<br>
+    <b>1</b>: Normalize after average<br>
+    <b>2</b>: Normalize before average</td>
+    </tr>
+    <tr>
+    <td>normalizationMethod</td>
+    <td>String</td>
+    <td>
+    <b>OffsetAndArea</b>: Substracts minimum and normalizes to the integral,
+    <b>OffsetAndCounts</b>: Substracts minimum and normalizes to the sum,
+    <b>OffsetAndMaximum</b>: Substracts minimum and normalizes to the maximum
+    <b>NormToMaximum</b>: Normalizes to the maximum
+    </td>
+    </tr>
+    </tr>
+    <tr>
+    <td>motor0,<br>motor1,<br>motor2,<br>motor3,<br>motor4</td>
+    <td>String</td>
+    <td>
+    Assumes knowledge of the motor settings in the experimental apperatus.
+    If unsure, consult the Motor Info Plugin or a Beamline Scientist.
+    </td>
+    </tr>
+</table>
+
+Notice that up to five motors can be specified, however no motor must be specified. If a
+motor is not needed, just set the variable to an empty string.
+</div>
+
+<H4><a NAME=EditComboBox>
+3.2 Edit the drop down menu
+</a></H4>
+
+Now that a new experiment is present in the experiments dictionary, it can be hardcoded into
+the selection of the drop down menu. The drop down menu itself is a QComboBox whose items are
+added using the addItem member function. The explicit code to do so (at least in the initial
+version of this programm) looks as follows:
+
+<div class="highlight"><pre><span class="bp">self</span><span class="o">.</span><span class="n">expCBox</span><span class="o">.</span><span class="n">addItems</span><span class="p">(</span>
+    <span class="p">[</span><span class="s">&#39;Generic Dichorism&#39;</span><span class="p">,</span>
+    <span class="s">&#39;ID08: XLD 9 Tesla Magnet&#39;</span><span class="p">,</span>
+    <span class="s">&#39;ID08: XLD 5 Tesla Magnet&#39;</span><span class="p">,</span>
+    <span class="s">&#39;ID08: XMCD 9 Tesla Magnet&#39;</span><span class="p">,</span>
+    <span class="s">&#39;ID08: XMCD 5 Tesla Magnet&#39;</span><span class="p">,</span>
+    <span class="s">&#39;ID12: XLD (quater wave plate)&#39;</span><span class="p">,</span>
+    <span class="s">&#39;ID12: XMCD (Flipper)&#39;</span><span class="p">,</span>
+    <span class="s">&#39;ID12: XMCD&#39;</span><span class="p">,</span>
+    <span class="s">&#39;Add new configuration&#39;</span><span class="p">])</span>
+</pre></div>
+
+It is important, that the registered string is the exact key of the experiment in the experiments
+dictionary.
+
+<H4><a NAME=EditSelectExp>
+3.3 Edit the selectExperiments function
+</a></H4>
+
+The select experiments function is called every time the 
+
+</body>
+</html>
