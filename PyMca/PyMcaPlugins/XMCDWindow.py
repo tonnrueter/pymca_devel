@@ -1,8 +1,34 @@
+#/*##########################################################################
+# Copyright (C) 2004-2013 European Synchrotron Radiation Facility
+#
+# This file is part of the PyMca X-ray Fluorescence Toolkit developed at
+# the ESRF by the Software group.
+#
+# This toolkit is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the Free
+# Software Foundation; either version 2 of the License, or (at your option)
+# any later version.
+#
+# PyMca is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# PyMca; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+#
+# PyMca follows the dual licensing model of Riverbank's PyQt and cannot be
+# used as a free plugin for a non-free program.
+#
+# Please contact the ESRF industrial unit (industry@esrf.fr) if this license
+# is a problem for you.
+#############################################################################*/
+__author__ = "T. Rueter - ESRF Data Analysis"
 import numpy, copy
 from os.path import splitext, basename, dirname, exists, join as pathjoin
-from re import search as regexpSearch
 from PyMca.PyMca_Icons import IconDict
-from PyMca import PyMcaDirs, PyMcaFileDialogs
+from PyMca import PyMcaDataDir, PyMcaDirs, PyMcaFileDialogs
 from PyMca import ConfigDict
 from PyMca import PyMcaQt as qt
 from PyMca import specfilewrapper as specfile
@@ -977,12 +1003,13 @@ class XMCDScanWindow(sw.ScanWindow):
         if activeCurve is None:
             return
         (xVal,  yVal,  legend,  info) = activeCurve
-        if 'selectionlegend' in info:
-            newLegend = info['selectionlegend']
-        elif 'operation' in info:
-            newLegend = (str(operation) + ' ' + self.title)
-        else:
-            newLegend = (legend + ' ' + self.title)
+        #if 'selectionlegend' in info:
+        #    newLegend = info['selectionlegend']
+        #elif 'operation' in info:
+        #    newLegend = (str(operation) + ' ' + self.title)
+        #else:
+        #    newLegend = (legend + ' ' + self.title)
+        newLegend = legend
         self.plotWindow.addCurve(xVal,
                                  yVal,  
                                  newLegend,
@@ -991,12 +1018,13 @@ class XMCDScanWindow(sw.ScanWindow):
 
     def addAll(self):
         for (xVal,  yVal,  legend,  info) in self.getAllCurves():
-            if 'selectionlegend' in info:
-                newLegend = info['selectionlegend']
-            elif 'operation' in info:
-                newLegend = (str(operation) + ' ' + self.title)
-            else:
-                newLegend = (legend + ' ' + self.title)
+            #if 'selectionlegend' in info:
+            #    newLegend = info['selectionlegend']
+            #elif 'operation' in info:
+            #    newLegend = (str(operation) + ' ' + self.title)
+            #else:
+            #    newLegend = (legend + ' ' + self.title)
+            newLegend = legend
             self.plotWindow.addCurve(xVal,
                                      yVal, 
                                      newLegend, 
@@ -1210,8 +1238,8 @@ class XMCDTreeWidget(qt.QTreeWidget):
 
     def setSelectionToSequence(self, seq=None, selectedOnly=False):
         '''
-        Sets the id column (col 0) to seq. If
-        sequence is None, a dialog window is 
+        Sets the group column (col 0) to seq. 
+        If sequence is None, a dialog window is 
         shown.
         '''
         chk = True
@@ -1258,7 +1286,7 @@ class XMCDTreeWidget(qt.QTreeWidget):
 
     def clearSelection(self, selectedOnly=True):
         '''
-        Empties the id column for the selected rows.
+        Empties the groups column for the selected rows.
         '''
         if selectedOnly:
             sel = self.selectedItems()
@@ -1266,7 +1294,7 @@ class XMCDTreeWidget(qt.QTreeWidget):
             root = self.invisibleRootItem()
             sel = [root.child(i) for i in range(root.childCount())]
         for item in sel:
-            item.setText(0,'')
+            item.setText(self.__colGroup,'')
             if self.color:
                 for i in range(self.columnCount()):
                     item.setBackground(i, self.colorDict[''])
@@ -1334,7 +1362,7 @@ class XMCDWidget(qt.QWidget):
         self.helpFileBrowser = qt.QTextBrowser()
         self.helpFileBrowser.setLineWrapMode(qt.QTextEdit.FixedPixelWidth)
         self.helpFileBrowser.setLineWrapColumnOrWidth(500)
-        self.helpFileBrowser.resize(500,300)
+        self.helpFileBrowser.resize(520,300)
         try:
             helpFileHandle = open(helpFileName)
             helpFileHTML = helpFileHandle.read()
@@ -1576,7 +1604,7 @@ class XMCDWidget(qt.QWidget):
         if self.helpFileBrowser is None:
             msg = qt.QMessageBox()
             msg.setWindowTitle('XLD/XMCD Error')
-            msg.setText('No help file found.'%helpfile)
+            msg.setText('No help file found.')
             msg.exec_()
             return
         else:
@@ -1620,11 +1648,28 @@ class XMCDWidget(qt.QWidget):
                     vmax = minmax.max()
                     vpivot = .5 * (vmax + vmin)
                 else:
+                    vpivot = 0.
                     values = numpy.array(
                                 [float('NaN')]*len(self.legendList))
             elif exp.startswith('ID08: XMCD'):
-                values = values0 * values1
-                vpivot = 0.
+                mask = numpy.where(numpy.isfinite(values0))[0]
+                polarization = values0.take(mask)
+                values1 = values1.take(mask)
+                signMagnets = numpy.sign(values1)
+                if len(polarization)==0:
+                    vpivot = 0.
+                    values = numpy.array(
+                                [float('NaN')]*len(self.legendList))
+                elif numpy.all(signMagnets>=0.) or\
+                   numpy.all(signMagnets<=0.) or\
+                   numpy.all(signMagnets==0.):
+                    vmin = polarization.min()
+                    vmax = polarization.max()
+                    vpivot = .5 * (vmax + vmin)
+                    values = polarization
+                else:
+                    vpivot = 0.
+                    values = polarization * signMagnets
             elif exp.startswith('ID12: XLD (quater wave plate)'):
                 # Extract counters from third column
                 counters = self.list.getColumn(3, convertType=str)
@@ -1677,9 +1722,11 @@ class XMCDWidget(qt.QWidget):
             for x in values:
                 if str(x) == 'nan':
                     seq += 'D'
-                elif x>vpivot:
+                elif x<vpivot:
+                    # Minus group
                     seq += 'A'
                 else:
+                    # Plus group
                     seq += 'B'
             self.list.setSelectionToSequence(seq)
 # Implement new assignment routines here END
@@ -1861,6 +1908,8 @@ class XMCDWidget(qt.QWidget):
         self.legendList = [leg for (xvals, yvals,  leg,  info) in curves] 
         self.infoList   = [info for (xvals, yvals,  leg,  info) in curves]
         # Try to recover the scan number from the legend, if not set
+        # Requires additional import:
+        #from re import search as regexpSearch
         #for ddict in self.infoList:
         #    key = ddict.get('Key','')
         #    if len(key)== 0:
@@ -1914,41 +1963,31 @@ def main():
     app = qt.QApplication([])
     
     # Create dummy ScanWindow
-#    swin = sw.ScanWindow()
-#    info0 = {'xlabel': 'foo',
-#             'ylabel': 'arb',
-#             'MotorNames': 'oxPS PhaseA Phase BRUKER CRYO OXFORD', 
-#             'MotorValues': '1 -6.27247094 -3.11222732 6.34150808 -34.75892563 21.99607165'}
-#    info1 = {'MotorNames': 'PhaseD oxPS PhaseA Phase BRUKER CRYO OXFORD',
-#             'MotorValues': '0.470746882688 0.25876374531 -0.18515967 -28.31216591 18.54513221 -28.09735532 -26.78833172'}
-#    info2 = {'MotorNames': 'PhaseD oxPS PhaseA Phase BRUKER CRYO OXFORD',
-#             'MotorValues': '-9.45353059 -25.37448851 24.37665651 18.88048044 -0.26018745 2 0.901968648111 '}
-#    x = numpy.arange(100.,1100.)
-#    y0 =  10*x + 10000.*numpy.exp(-0.5*(x-500)**2/400) + 1500*numpy.random.random(1000.)
-#    y1 =  10*x + 10000.*numpy.exp(-0.5*(x-600)**2/400) + 1500*numpy.random.random(1000.)
-#    y2 =  10*x + 10000.*numpy.exp(-0.5*(x-400)**2/400) + 1500*numpy.random.random(1000.)
-#    
-#    swin.newCurve(x, y2, legend="Curve2", xlabel='ene_st2', ylabel='Ihor', info=info2, replot=False, replace=False)
-#    swin.newCurve(x, y0, legend="Curve0", xlabel='ene_st0', ylabel='Iver', info=info0, replot=False, replace=False)
-#    swin.newCurve(x, y1, legend="Curve1", xlabel='ene_st1', ylabel='Ihor', info=info1, replot=False, replace=False)
-#    
-#    # info['Key'] is overwritten when using newCurve
-#    swin.dataObjectsDict['Curve2 Ihor'].info['Key'] = '1.1'
-#    swin.dataObjectsDict['Curve0 Iver'].info['Key'] = '34.1'
-#    swin.dataObjectsDict['Curve1 Ihor'].info['Key'] = '123.1'
-#
-#    w = XMCDWidget(None, swin, 'ID08', nSelectors = 5)
-#    w.show()
+    swin = sw.ScanWindow()
+    info0 = {'xlabel': 'foo',
+             'ylabel': 'arb',
+             'MotorNames': 'oxPS PhaseA Phase BRUKER CRYO OXFORD', 
+             'MotorValues': '1 -6.27247094 -3.11222732 6.34150808 -34.75892563 21.99607165'}
+    info1 = {'MotorNames': 'PhaseD oxPS PhaseA Phase BRUKER CRYO OXFORD',
+             'MotorValues': '0.470746882688 0.25876374531 -0.18515967 -28.31216591 18.54513221 -28.09735532 -26.78833172'}
+    info2 = {'MotorNames': 'PhaseD oxPS PhaseA Phase BRUKER CRYO OXFORD',
+             'MotorValues': '-9.45353059 -25.37448851 24.37665651 18.88048044 -0.26018745 2 0.901968648111 '}
+    x = numpy.arange(100.,1100.)
+    y0 =  10*x + 10000.*numpy.exp(-0.5*(x-500)**2/400) + 1500*numpy.random.random(1000.)
+    y1 =  10*x + 10000.*numpy.exp(-0.5*(x-600)**2/400) + 1500*numpy.random.random(1000.)
+    y2 =  10*x + 10000.*numpy.exp(-0.5*(x-400)**2/400) + 1500*numpy.random.random(1000.)
+    
+    swin.newCurve(x, y2, legend="Curve2", xlabel='ene_st2', ylabel='Ihor', info=info2, replot=False, replace=False)
+    swin.newCurve(x, y0, legend="Curve0", xlabel='ene_st0', ylabel='Iver', info=info0, replot=False, replace=False)
+    swin.newCurve(x, y1, legend="Curve1", xlabel='ene_st1', ylabel='Ihor', info=info1, replot=False, replace=False)
+    
+    # info['Key'] is overwritten when using newCurve
+    swin.dataObjectsDict['Curve2 Ihor'].info['Key'] = '1.1'
+    swin.dataObjectsDict['Curve0 Iver'].info['Key'] = '34.1'
+    swin.dataObjectsDict['Curve1 Ihor'].info['Key'] = '123.1'
 
-    helpFileBrowser = qt.QTextBrowser()
-    helpFileBrowser.setLineWrapMode(qt.QTextEdit.FixedPixelWidth)
-    helpFileBrowser.setLineWrapColumnOrWidth(500)
-    helpFileBrowser.resize(520,400)
-    helpFileHandle = open('/home/truter/lab/XMCD_infotext.html')
-    helpFileHTML = helpFileHandle.read()
-    helpFileHandle.close()
-    helpFileBrowser.setHtml(helpFileHTML)
-    helpFileBrowser.show()
+    w = XMCDWidget(None, swin, 'ID08', nSelectors = 5)
+    w.show()
 
     app.exec_()
 
