@@ -28,12 +28,19 @@ __author__ = "T. Rueter - ESRF Data Analysis"
 import numpy, copy
 from os.path import splitext, basename, dirname, exists, join as pathjoin
 from PyMca.PyMca_Icons import IconDict
-from PyMca import PyMcaDataDir, PyMcaDirs, PyMcaFileDialogs
+from PyMca import PyMcaDirs, PyMcaFileDialogs
 from PyMca import ConfigDict
 from PyMca import PyMcaQt as qt
 from PyMca import specfilewrapper as specfile
-
+from PyMca import PyMcaDataDir
 from PyMca import ScanWindow as sw
+
+if hasattr(qt, "QString"):
+    QString = qt.QString
+    QStringList = qt.QStringList
+else:
+    QString = str
+    QStringList = list
 
 DEBUG = 0
 if DEBUG:
@@ -213,7 +220,7 @@ class XMCDOptions(qt.QDialog):
             'offsetAndCounts' : r'(y-min(y))/sum(max(y)-min(y))',
             'offsetAndArea'   : r'(y-min(y))/trapz(max(y)-min(y),x)'
         }
-        for (name, eq) in normDict.iteritems():
+        for (name, eq) in normDict.items():
             if ident == name:
                 return eq
             if ident == eq:
@@ -336,7 +343,7 @@ class XMCDOptions(qt.QDialog):
                     name = self.normalizationMethod(name)
                 if option.startswith('Motor') and name == 'None':
                     name = ''
-                idx = obj.findText(qt.QString(name))
+                idx = obj.findText(QString(name))
                 obj.setCurrentIndex(idx)
             elif isinstance(obj, qt.QButtonGroup):
                 try:
@@ -1358,8 +1365,11 @@ class XMCDWidget(qt.QWidget):
                                               parent=None)
         self.optsWindow = XMCDOptions(self, self.motorNamesList)
         
-        helpFileName = r'/home/truter/lab/XMCD_infotext.html'
+        helpFileName = pathjoin(PyMcaDataDir.PYMCA_DOC_DIR,
+                                "HTML",
+                                "XMCDInfotext.html")
         self.helpFileBrowser = qt.QTextBrowser()
+        self.helpFileBrowser.setWindowTitle("XMCD Help")
         self.helpFileBrowser.setLineWrapMode(qt.QTextEdit.FixedPixelWidth)
         self.helpFileBrowser.setLineWrapColumnOrWidth(500)
         self.helpFileBrowser.resize(520,300)
@@ -1828,7 +1838,7 @@ class XMCDWidget(qt.QWidget):
                         counter = cntList[yIdx]
                     except Exception:
                         counter = ''
-            tmp = qt.QStringList([selection, filename, scanNo, counter])
+            tmp = QStringList([selection, filename, scanNo, counter])
             # Determine value for each motor
             for m in mList:
                 if len(m) == 0:
@@ -1988,6 +1998,16 @@ def main():
 
     w = XMCDWidget(None, swin, 'ID08', nSelectors = 5)
     w.show()
+
+#    helpFileBrowser = qt.QTextBrowser()
+#    helpFileBrowser.setLineWrapMode(qt.QTextEdit.FixedPixelWidth)
+#    helpFileBrowser.setLineWrapColumnOrWidth(500)
+#    helpFileBrowser.resize(520,400)
+#    helpFileHandle = open('/home/truter/lab/XMCD_infotext.html')
+#    helpFileHTML = helpFileHandle.read()
+#    helpFileHandle.close()
+#    helpFileBrowser.setHtml(helpFileHTML)
+#    helpFileBrowser.show()
 
     app.exec_()
 
