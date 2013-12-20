@@ -149,8 +149,8 @@ class MarkerSpinBox(qt.QDoubleSpinBox):
         else:
             if ddict['marker'] != self.markerID:
                 return  
-        if DEBUG:
-            print "_markerMoved -- ddict:\n\t",ddict
+        #if DEBUG:
+        #    print "_markerMoved -- ddict:\n\t",ddict
         if ddict['event'] == 'markerMoving':
             self.setValue(ddict['x'])
             
@@ -199,15 +199,37 @@ class LineEditDisplay(qt.QLineEdit):
 
 class SumRulesWindow(qt.QWidget):
 
-    tabChangedSignal = qt.pyqtSignal('QString')
-    tabList = ['element','background', 'integration']
-    xasMarkerList  = ['Pre Min','Pre Max','Post Min','Post Max']
-    xmcdMarkerList = ['p','q','r']
+    # Curve labeling
+    __xasBGmodel = 'xas BG model'
+    # Tab names
+    __tabElem = 'element'
+    __tabBG   = 'background'
+    __tabInt  = 'integration'
+    # Marker names
+    __preMin = 'Pre Min'
+    __preMax = 'Pre Max'
+    __postMin = 'Post Min'
+    __postMax = 'Post Max'
+    __intP = 'p'
+    __intQ = 'q'
+    __intR = 'r'
     
-    # 3d
+    # Lists
+    tabList = [__tabElem,
+               __tabBG,
+               __tabInt]
+    xasMarkerList  = [__preMin,
+                      __preMax,
+                      __postMin,
+                      __postMax]
+    xmcdMarkerList = [__intP,
+                      __intQ,
+                      __intR]
+    
+    # Elements with 3d final state
     transistionMetals = ['Ti', 'V', 'Cr', 'Mn',\
                          'Fe', 'Co', 'Ni', 'Cu']
-    # 4f
+    # Elements with 4f final state
     rareEarths = ['Ce', 'Pr', 'Nd', 'Pm', 'Sm',\
                   'Eu', 'Gd', 'Tb', 'Dy', 'Ho',\
                   'Er', 'Tm', 'Yb']
@@ -216,8 +238,11 @@ class SumRulesWindow(qt.QWidget):
             '3d': transistionMetals,
             '4f': rareEarths
     }
-    # Electron configurations
+    # Electron final states
     electronConfs = ['3d','4f']
+    
+    # Signals
+    tabChangedSignal = qt.pyqtSignal('QString')
 
     def __init__(self, parent=None):
         qt.QWidget.__init__(self, parent)
@@ -238,7 +263,7 @@ class SumRulesWindow(qt.QWidget):
         # Tab Widget
         self.tabWidget = qt.QTabWidget()
         for window in self.tabList:
-            if window == 'element':
+            if window == self.__tabElem:
                 sampleGB         = qt.QGroupBox('Sample definition')
                 sampleLayout     = qt.QVBoxLayout()
                 sampleGB.setLayout(sampleLayout)
@@ -335,23 +360,28 @@ class SumRulesWindow(qt.QWidget):
                 elementTabLayout.addWidget(qt.VerticalSpacer())
                 elementTabWidget = qt.QWidget()
                 elementTabWidget.setLayout(elementTabLayout)
-                # Add to self.valuesDict
-                self.valuesDict['element']\
-                        ['element'] = self.elementCB
-                self.valuesDict['element']\
-                        ['electron configuration'] = self.elementEConfCB
-                self.valuesDict['element']\
-                        ['electron occupation'] = self.electronOccupation
-                self.valuesDict['element']['edge1Transistion'] = self.edge1CB
-                self.valuesDict['element']['edge2Transistion'] = self.edge2CB
-                self.valuesDict['element']['edge1Energy'] = self.edge1Line
-                self.valuesDict['element']['edge2Energy'] = self.edge2Line
-                self.valuesDict['element']['info'] = {}
                 self.tabWidget.addTab(
                             elementTabWidget,
                             window.upper())
                 # END tab layouting
-            elif window == 'background':
+                
+                self.valuesDict[self.__tabElem]\
+                    ['element'] = self.elementCB
+                self.valuesDict[self.__tabElem]\
+                    ['electron configuration'] = self.elementEConfCB
+                self.valuesDict[self.__tabElem]\
+                    ['electron occupation'] = self.electronOccupation
+                self.valuesDict[self.__tabElem]\
+                    ['edge1Transistion'] = self.edge1CB
+                self.valuesDict[self.__tabElem]\
+                    ['edge2Transistion'] = self.edge2CB
+                self.valuesDict[self.__tabElem]\
+                    ['edge1Energy'] = self.edge1Line
+                self.valuesDict[self.__tabElem]\
+                    ['edge2Energy'] = self.edge2Line
+                self.valuesDict[self.__tabElem]['info'] = {}
+                
+            elif window == self.__tabBG:
                 # BEGIN Pre/Post edge group box
                 prePostLayout = qt.QGridLayout()
                 prePostLayout.setContentsMargins(0,0,0,0)
@@ -392,25 +422,81 @@ class SumRulesWindow(qt.QWidget):
                     markerWidget, spinbox = self.addMarker(window=window,
                                                   label=markerLabel,
                                                   xpos=0.)
-                    self.valuesDict[window][markerLabel] = spinbox
+                    self.valuesDict[self.__tabBG][markerLabel] = spinbox
                     markerWidget.setContentsMargins(0,-8,0,-8)
                     edgeLayout.addWidget(markerWidget)
                 edgeGB = qt.QGroupBox('Edge positions')
                 edgeGB.setLayout(edgeLayout)
-                # Insert into tab
-                xasTabLayout = qt.QVBoxLayout()
-                xasTabLayout.setContentsMargins(0,0,0,0)
-                xasTabLayout.addWidget(prePostGB)
-                xasTabLayout.addWidget(edgeGB)    
-                xasTabLayout.addWidget(qt.VerticalSpacer())
-                xasWidget = qt.QWidget()
-                xasWidget.setLayout(xasTabLayout)
-                self.tabWidget.addTab(
-                            xasWidget,
-                            window.upper())
                 # END Edge group box
+                
+                # BEGIN Fit control group box
+                #stepRatio = qt.QLineEdit('0.66')
+                stepRatio = qt.QDoubleSpinBox()
+                stepRatio.setMaximumWidth(100)
+                stepRatio.setAlignment(qt.Qt.AlignRight)
+                #stepRatioValidator = qt.QDoubleValidator()
+                #stepRatio.setValidator(stepRatioValidator)
+                #stepRatioValidator.setBottom(0.)
+                #stepRatioValidator.setTop(1.)
+                stepRatio.setMinimum(0.)
+                stepRatio.setMaximum(1.)
+                stepRatio.setSingleStep(.05)
+                stepRatio.setValue(.65)
+                stepRatioLayout = qt.QHBoxLayout()
+                stepRatioLayout.addWidget(qt.QLabel('Step ratio'))
+                stepRatioLayout.addWidget(qt.HorizontalSpacer())
+                stepRatioLayout.addWidget(stepRatio)
+                stepRatioWidget = qt.QWidget()
+                stepRatioWidget.setContentsMargins(0,-8,0,-8)
+                stepRatioWidget.setLayout(stepRatioLayout)
+                
+                #stepWidth = qt.QLineEdit('5.0')
+                stepWidth = qt.QDoubleSpinBox()
+                stepWidth.setMaximumWidth(100)
+                stepWidth.setAlignment(qt.Qt.AlignRight)
+                #stepWidthValidator = qt.QDoubleValidator()
+                #stepWidth.setValidator(stepWidthValidator)
+                #stepWidthValidator.setBottom(0.)
+                #stepWidthValidator.setTop(1.)
+                stepWidth.setMinimum(0.)
+                stepWidth.setMaximum(1.)
+                stepWidth.setSingleStep(.05)
+                stepWidth.setValue(.35)
+                stepWidthLayout = qt.QHBoxLayout()
+                stepWidthLayout.addWidget(qt.QLabel('Step width'))
+                stepWidthLayout.addWidget(qt.HorizontalSpacer())
+                stepWidthLayout.addWidget(stepWidth)
+                stepWidthWidget = qt.QWidget()
+                stepWidthWidget.setContentsMargins(0,-8,0,-8)
+                stepWidthWidget.setLayout(stepWidthLayout)
+                
+                fitControlLayout = qt.QVBoxLayout()
+                fitControlLayout.addWidget(stepRatioWidget)
+                fitControlLayout.addWidget(stepWidthWidget)
+                fitControlGB = qt.QGroupBox('Fit control')
+                fitControlGB.setLayout(fitControlLayout)
+                # END Fit control group box
+                
+                # Insert into tab
+                backgroundTabLayout = qt.QVBoxLayout()
+                backgroundTabLayout.setContentsMargins(0,0,0,0)
+                backgroundTabLayout.addWidget(prePostGB)
+                backgroundTabLayout.addWidget(edgeGB)    
+                backgroundTabLayout.addWidget(fitControlGB)    
+                backgroundTabLayout.addWidget(qt.VerticalSpacer())
+                backgroundWidget = qt.QWidget()
+                backgroundWidget.setLayout(backgroundTabLayout)
+                self.tabWidget.addTab(
+                            backgroundWidget,
+                            window.upper())
+                
+                stepRatio.valueChanged['double'].connect(self.estimateBG)
+                stepWidth.valueChanged['double'].connect(self.estimateBG)
+                self.valuesDict[self.__tabBG]['Step Ratio'] = stepRatio
+                self.valuesDict[self.__tabBG]['Step Width'] = stepWidth
+                            
             #markerWidget, spinbox = self.addMarker(window=window,label=window,xpos=700.)
-            elif window == 'integration':
+            elif window == self.__tabInt:
                 pqLayout = qt.QVBoxLayout()
                 pqLayout.setContentsMargins(0,0,0,0)
                 for markerLabel in self.xmcdMarkerList:
@@ -432,6 +518,8 @@ class SumRulesWindow(qt.QWidget):
                             xmcdWidget,
                             window.upper())
             #self.tabWidget.addTab(markerWidget, window.upper())
+        # Add to self.valuesDict
+
         self.tabWidget.currentChanged['int'].connect(
                             self._handleTabChangedSignal)
         
@@ -446,6 +534,10 @@ class SumRulesWindow(qt.QWidget):
         #self.plotWindow.graphBottomLayout.addWidget(buttonAddMarker)
         #self.plotWindow.graphBottomLayout.addWidget(buttonDelMarker)
         self.plotWindow.graphBottomLayout.addWidget(buttonPrint)
+        
+        self.connect(self.plotWindow.graph,
+             qt.SIGNAL("QtBlissGraphSignal"),
+             self._handleGraphSignal)
         
         # Layout
         mainLayout = qt.QVBoxLayout()
@@ -496,15 +588,15 @@ class SumRulesWindow(qt.QWidget):
         self.elementCB.addItems(['']+elementsList)
 
     def getElementInfo(self, symbol):
-        #eConfTmp = self.valuesDict['element']\
+        #eConfTmp = self.valuesDict[self.__tabElem]\
         #               ['Electron Configuration']
-        #self.valuesDict['element']['element']
-        #self.valuesDict['element']\
+        #self.valuesDict[self.__tabElem]['element']
+        #self.valuesDict[self.__tabElem]\
         #        ['Electron Configuration'] = eConfTmp
         ddict = {}
         symbol = str(symbol)
         if len(symbol) == 0:
-            self.valuesDict['element']['info'] = {}
+            self.valuesDict[self.__tabElem]['info'] = {}
             return
         try:
             ddict = Elements.Element[symbol]
@@ -513,7 +605,7 @@ class SumRulesWindow(qt.QWidget):
             msg += 'Elements.Element dictionary'
             print(msg)
         # Update valuesDict
-        self.valuesDict['element']['info'] = ddict
+        self.valuesDict[self.__tabElem]['info'] = ddict
         # Update the EdgeCBs
         # Lookup all keys ending in 'xrays'
         keys = [item for item in ddict.keys() if item.endswith('xrays')]
@@ -551,8 +643,13 @@ class SumRulesWindow(qt.QWidget):
                     value = str(tmp)
                 elif isinstance(obj, LineEditDisplay) or\
                      isinstance(obj, qt.QLineEdit):
-                    tmp = obj.text()
-                    value = str(tmp)
+                    tmp = str(obj.text())
+                    try:
+                        value = float(tmp)
+                    except ValueError:
+                        value = tmp
+                elif isinstance(obj, qt.QDoubleSpinBox):
+                    value = obj.value()
                 elif isinstance(obj, dict):
                     value = obj
                 ddict[tab][key] = value
@@ -565,7 +662,7 @@ class SumRulesWindow(qt.QWidget):
                        + self.electronConfs)
         # Check as early as possible if element symbol is present
         try:
-            symbol = ddict['element']['element']
+            symbol = ddict[self.__tabElem]['element']
             self.getElementInfo(symbol)
         except KeyError:
             pass
@@ -574,6 +671,7 @@ class SumRulesWindow(qt.QWidget):
                 raise KeyError('setValuesDict -- Tab not found')
             succession = []
             for key, value in tabDict.items():
+                print key
                 if not isinstance(key, str):
                     raise KeyError('setValuesDict -- Key is not str instance')
                 obj = self.valuesDict[tab][key]
@@ -635,13 +733,12 @@ class SumRulesWindow(qt.QWidget):
         self._handleTabChangedSignal(currIdx)
 
     def estimatePrePostEdgePositions(self):
-    #def estimatePrePostEdgePositions(self, x, y, edgeList=[]):
         if self.xasData is None:
             return
 
         ddict = self.getValuesDict()
-        edgeList = [ddict['element']['edge1Energy'],
-                    ddict['element']['edge2Energy']]
+        edgeList = [ddict[self.__tabElem]['edge1Energy'],
+                    ddict[self.__tabElem]['edge2Energy']]
         edgeList = [float(tmp.replace('meV','')) for tmp in edgeList
                     if len(tmp)>0 and tmp!='---']
         x, y = self.xasData
@@ -675,19 +772,91 @@ class SumRulesWindow(qt.QWidget):
             preMax = edge1 - factor*xLen
             preMin = edge2 + factor*xLen
 
-        ddict['background']['Pre Min']  = max(xMin,xLimMin+xStep)
-        ddict['background']['Pre Max']  = preMax
-        ddict['background']['Post Min'] = preMin
-        ddict['background']['Post Max'] = min(xMax,xLimMax-xStep)
-        ddict['background']['Edge 1'] = edge1
-        ddict['background']['Edge 2'] = edge2
+
+        ddict[self.__tabBG][self.__preMin]  = max(xMin,xLimMin+xStep)
+        ddict[self.__tabBG][self.__preMax]  = preMax
+        ddict[self.__tabBG][self.__postMin] = preMin
+        ddict[self.__tabBG][self.__postMax] = min(xMax,xLimMax-xStep)
+        ddict[self.__tabBG]['Edge 1'] = edge1
+        ddict[self.__tabBG]['Edge 2'] = edge2
         
         self.setValuesDict(ddict)
+        
+    def estimateBG(self, val=None):
+        if self.xasData is None:
+            return
+        if self.tabWidget.currentIndex() != 1:
+            return
+            
+        x, y = self.xasData
+        #self.estimatePrePostEdgePositions()
+        ddict = self.getValuesDict()
+        x01 = ddict[self.__tabBG]['Edge 1']
+        x02 = ddict[self.__tabBG]['Edge 2']
+        preMin = ddict[self.__tabBG][self.__preMin]
+        preMax = ddict[self.__tabBG][self.__preMax]
+        postMin = ddict[self.__tabBG][self.__postMin]
+        postMax = ddict[self.__tabBG][self.__postMax]
+        width = ddict[self.__tabBG]['Step Width']
+        ratio = ddict[self.__tabBG]['Step Ratio']
+        
+        idxPre  = numpy.nonzero((preMin <= x) & (x <= preMax))[0]
+        idxPost = numpy.nonzero((postMin <= x) & (x <= postMax))[0]
+        
+        xPreMax  = x[idxPre.max()]
+        xPostMin = x[idxPost.min()]
+        gap = abs(xPreMax - xPostMin)
+        
+        avgPre  = numpy.average(y[idxPre])
+        avgPost = numpy.average(y[idxPost])
+        bottom  = min(avgPre,avgPost)
+        top     = max(avgPre,avgPost)
+        if avgPost >= avgPre:
+            sign = 1.
+            erf  = upstep
+        else:
+            sign = -1.
+            erf  = downstep
+        diff = abs(avgPost - avgPre)
+        
+        ymin = y.min()
+        ymax = y.max()
+        
+        if x02 > x01:
+            par1 = (ratio,      x02, width*gap)
+            par2 = ((1.-ratio), x01, width*gap)
+        else:
+            par1 = (ratio,      x01, width*gap)
+            par2 = ((1.-ratio), x02, width*gap)
+        
+#        print (xPreMax)
+#        print (xPostMin)
+#        print (gap)
+#        
+#        print (avgPre)
+#        print (avgPost)
+#        print (bottom)
+#        print (top)
+#        print (sign)
+#        print (diff)
+        
+        model = bottom + sign * diff * (erf(par1, x) + erf(par2, x))
+        preModel  = numpy.asarray(len(x)*[avgPre])
+        postModel = numpy.asarray(len(x)*[avgPost])
+        
+        self.xasDataBG = x, model
+        
+        self.plotWindow.addCurve(x,model,self.__xasBGmodel,{},replot=False)
+        self.plotWindow.addCurve(x,preModel,'Pre BG model',{},replot=False)
+        self.plotWindow.addCurve(x,postModel,'Post BG model',{},replot=False)
+        self.plotWindow.graph.replot()
 
     def plotOnDemand(self, window, xlabel='ene_st', ylabel='zratio'):
         # TODO: Errorhandling if self.xas, self.xmcd are none
+        # TODO: Why does counter name persist, although the info is set to {} -> xlabel/ylabel
         # Remove all curves
         legends = self.plotWindow.getAllCurves(just_legend=True)
+        print legends
         self.plotWindow.removeCurves(legends, replot=False)
         if (self.xmcdData is None) or (self.xasData is None):
             # Nothing to do
@@ -695,7 +864,7 @@ class SumRulesWindow(qt.QWidget):
         xyList  = []
         mapToY2 = False
         window = window.lower()
-        if window == 'element':
+        if window == self.__tabElem:
             xmcdX, xmcdY = self.xmcdData
             xasX,  xasY  = self.xasData
             xyList = [(xmcdX, xmcdY, 'xmcd'), 
@@ -703,34 +872,42 @@ class SumRulesWindow(qt.QWidget):
             # At least one of the curve is going
             # to get plotted on secondary y axis
             mapToY2 = True 
-        elif window == 'background':
+        elif window == self.__tabBG:
             xasX, xasY= self.xasData
             xyList = [(xasX, xasY, 'xas')]
             if self.xasDataBG is not None:
                 xasBGX, xasBGY = self.xasDataBG
-                xyList += [(xasBGX, xasBGY, 'xas Background')]
-        elif window == 'integration':
-            if self.xasDataCorr is None:
-                print 'plotOnDemand -- xasDataCorr is None. Calculate corrected XAS data first!'
+                xyList += [(xasBGX, xasBGY, self.__xasBGmodel)]
+        elif window == self.__tabInt:
+            if (self.xasDataBG is None):
                 return
+            if self.xasDataCorr is None:
+                # Calculate xasDataCorr
+                xBG, yBG = self.xasDataBG
+                x, y = self.xasData
+                # TODO: check shape?
+                self.xasDataCorr = x, y-yBG
             mathObj = Mathematics()
             xmcdX, xmcdY = self.xmcdData
-            xasX,  xasY  = self.xasData
+            xasX,  xasY  = self.xasDataCorr
             xmcdIntY = mathObj.cumtrapz(y=xmcdY, x=xmcdX)
             xmcdIntX = .5 * (xmcdX[1:] + xmcdX[:-1])
             
             xasIntY  = mathObj.cumtrapz(y=xasY,  x=xasX)
             xasIntX  = .5 * (xasX[1:] + xasX[:-1])
             ylabel += ' integral'
-            xyList = [(xmcdIntX, xmcdIntY, 'xmcd'),
-                      (xasIntX,  xasIntY,  'xas')]
+            xyList = [(xmcdIntX, xmcdIntY, 'xmcd Int'),
+                      (xasX,     xasY,     'xas corr'),
+                      (xasIntX,  xasIntY,  'xas Int')]
         for x,y,legend in xyList:
             self.plotWindow.newCurve(
                     x=x, 
                     y=y,
                     legend=legend,
                     xlabel=xlabel, 
-                    ylabel=ylabel, 
+                    #xlabel=xlabel, 
+                    ylabel='', 
+                    #ylabel=ylabel,  
                     info={}, 
                     replot=False, 
                     replace=False)
@@ -762,65 +939,12 @@ class SumRulesWindow(qt.QWidget):
         
         return spinboxWidget, spinbox
 
-    def estimateBG(self):
-        if self.xasData is None:
-            return
-        if self.tabWidget.currentIndex() != 1:
-            return
-            
-        x, y = self.xasData
-        #self.estimatePrePostEdgePositions()
-        ddict = self.getValuesDict()
-        x01 = ddict['background']['Edge 1']
-        x02 = ddict['background']['Edge 2']
-        preMin = ddict['background']['Pre Min']
-        preMax = ddict['background']['Pre Max']
-        postMin = ddict['background']['Post Min']
-        postMax = ddict['background']['Post Max']
-        
-        idxPre  = numpy.nonzero((preMin <= x) & (x <= preMax))[0]
-        idxPost = numpy.nonzero((postMin <= x) & (x <= postMax))[0]
-        
-        xPreMax  = x[idxPre.max()]
-        xPostMin = x[idxPost.min()]
-        gap = abs(xPreMax - xPostMin)
-        
-        avgPre  = numpy.average(y[idxPre])
-        avgPost = numpy.average(y[idxPost])
-        bottom  = min(avgPre,avgPost)
-        top     = max(avgPre,avgPost)
-        if avgPost >= avgPre:
-            sign = 1.
-            erf  = upstep
-        else:
-            sign = -1.
-            erf  = downstep
-        diff = abs(avgPost - avgPre)
-        
-        ymin = y.min()
-        ymax = y.max()
-        par1 = (2./3., x01, gap/4.)
-        par2 = (1./3., x02, gap/6.)
-        
-        print (xPreMax)
-        print (xPostMin)
-        print (gap)
-        
-        print (avgPre)
-        print (avgPost)
-        print (bottom)
-        print (top)
-        print (sign)
-        print (diff)
-        
-        model = bottom + sign * diff * (erf(par1, x) + erf(par2, x))
-        preModel  = numpy.asarray(len(x)*[avgPre])
-        postModel = numpy.asarray(len(x)*[avgPost])
-        
-        self.plotWindow.addCurve(x,model,'BG model',{})
-        self.plotWindow.addCurve(x,preModel,'Pre BG model',{})
-        self.plotWindow.addCurve(x,postModel,'Post BG model',{})
-        
+    def _handleGraphSignal(self, ddict):
+        #if 'marker' not in ddict:
+        if ddict['event'] == 'markerMoved':
+            print ddict
+            if self.tabWidget.currentIndex() == 1:
+                self.estimateBG()
 
     def _handleTabChangedSignal(self, idx):
         if idx >= len(self.tabList):
