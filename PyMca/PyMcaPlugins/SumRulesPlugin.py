@@ -6,6 +6,7 @@ from PyMca import SimpleFitModule as SFM
 from PyMca import SpecfitFunctions
 from PyMca import Elements
 from PyMca import ConfigDict
+from PyMca import PyMcaDirs
 from PyMca.SpecfitFuns import upstep, downstep
 from PyMca.Gefit import LeastSquaresFit as LSF
 
@@ -71,6 +72,51 @@ class Mathematics(object):
             y = numpy.take(y, idx)
         
         return numpy.cumsum(.5 * numpy.diff(x) * (y[1:] + y[:-1]))
+    
+    def magneticMoment(self, p, q, r, n, econf = '3d'):
+        '''
+        Input
+        -----
+        
+        p : Float
+            Integral over the L3 (first) edge of the XMCD
+            (difference) signal
+        q : Float
+            Integral over the L2 (second) edge of the XMCD
+            (difference) signal
+        r : Float
+            Integral over the complete XAS signal
+        n : Float
+            Electron occupation number of the sample material
+        econf : String
+            Determines if material is of 3d or 4f type and
+            thus the number of electronic states in the outer
+            shell
+        
+        Returns the orbital resp. the spin part of the magnetic moment        
+        (c.f. Chen et al., Phys. Rev. Lett., 75(1), 152)
+        '''
+        mOrbt, mSpin, mRatio = None, None, None
+        
+        # Determine number of states in outer shell
+        if econf not in ['3d','4f']:
+            raise ValueError('Element must either be 3d or 4f type!')
+        elif econf == '3d':
+            nMax = 10.
+        else:
+            nMax = 14.
+        
+        # Check if r is non-zero
+        if r == 0.:
+            raise ZeroDivisionError()
+            
+        # Calculate Integrals
+        if q is not None:
+            mOrbt = -4./3. * q * (nMax - n) / r
+        if (q is not None) and (p is not None):
+            mSpin  = -(6.*p - 4.*q) * (nMax - n) / r
+            mRatio = 2*q/(9*p-6*q)
+        return mOrbt, mSpin, mRatio
         
     def rndDataQuad(self):
         x = 5 + numpy.random.rand(500) + numpy.arange(500, dtype=float)
@@ -110,38 +156,82 @@ class Mathematics(object):
 
 class MarkerSpinBox(qt.QDoubleSpinBox):
     
-    valueChangedSignal = qt.pyqtSignal(object)
+    valueChangedSignal = qt.pyqtSignal(float)
+    #intersectionChangedSignal = qt.pyqtSignal(float)
+    intersectionsChangedSignal = qt.pyqtSignal(object)
     
-    def __init__(self, window, graph, label='', parent=None):
+    #def __init__(self, window, graph, label='', parent=None):
+    def __init__(self, window, plotWindow, label='', parent=None):
         qt.QDoubleSpinBox.__init__(self, parent)
         
         # Attributes
+        self.label = label
         self.window = window
-        self.graph = graph
-        self.markerID = self.graph.insertX1Marker(0., label=label)
+        self.plotWindow = plotWindow
+        #self.graph = graph
+        #self.markerID = self.graph.insertX1Marker(0., label=label)
+        self.markerID = self.plotWindow.graph.insertX1Marker(0., label=label)
         
         # Initialize
         self.setMinimum(0.)
-        self.setMaximum(10000.)
+        self.setMaximum(10000.) # TODO: Change init value
         self.setValue(0.)
         
         # Connects
-        self.connect(self.graph,
+        #self.connect(self.graph,
+        self.connect(self.plotWindow.graph,
              qt.SIGNAL("QtBlissGraphSignal"),
              self._markerMoved)
         self.valueChanged['double'].connect(self._valueChanged)
         self.valueChanged['QString'].connect(self._valueChanged)
 
+    def getIntersections(self):
+        dataList = self.plotWindow.getAllCurves()
+        #dataDict = self.graph.curves
+        resDict  = {}
+        pos      = self.value()
+        if not isinstance(pos, float):
+            print 'getIntesections -- pos is not of type float'
+            return
+        #for listIdx, (x, y, legend, info) in enumerate(dataDict.items()):
+        for x, y, legend, info in dataList:
+            res  = float('NaN')
+            if numpy.all(pos < x) or numpy.all(x < pos):
+                print 'getIntersections -- Marker position outside of data range'
+                continue
+                #raise ValueError('Marker outside of data range')
+            if pos in x:
+                idx = numpy.where(x == pos)
+                res = y[idx]
+            else:
+                # Intepolation needed, assume well
+                # behaved data (c.f. copy routine)
+                lesserIdx  = numpy.nonzero(x < pos)[0][-1]
+                greaterIdx = numpy.nonzero(x > pos)[0][0]
+                dy = y[lesserIdx] - y[greaterIdx]
+                dx = x[lesserIdx] - x[greaterIdx]
+                res = dy/dx * (pos - x[lesserIdx]) + y[lesserIdx]
+            resDict[legend] = (pos, res)
+        #print 'getIntersections -- Result:', resDict
+        return resDict
+
     def _setMarkerFollowMouse(self, windowTitle):
         windowTitle = str(windowTitle)
+        graph = self.plotWindow.graph
         if self.window == windowTitle:
-            self.graph.setmarkercolor(self.markerID, 'blue')
-            self.graph.setmarkerfollowmouse(self.markerID, True)
-            self.graph.replot()
+            #self.graph.setmarkercolor(self.markerID, 'blue')
+            #self.graph.setmarkerfollowmouse(self.markerID, True)
+            #self.graph.replot()
+            graph.setmarkercolor(self.markerID, 'blue')
+            graph.setmarkerfollowmouse(self.markerID, True)
+            graph.replot()
         else:
-            self.graph.setmarkercolor(self.markerID, 'black')
-            self.graph.setmarkerfollowmouse(self.markerID, False)
-            self.graph.replot()
+            #self.graph.setmarkercolor(self.markerID, 'black')
+            #self.graph.setmarkerfollowmouse(self.markerID, False)
+            #self.graph.replot()
+            graph.setmarkercolor(self.markerID, 'black')
+            graph.setmarkerfollowmouse(self.markerID, False)
+            graph.replot()
 
     def _markerMoved(self, ddict):
         if 'marker' not in ddict:
@@ -160,8 +250,14 @@ class MarkerSpinBox(qt.QDoubleSpinBox):
         except ValueError:
             print '_valueChanged -- Sorry, it ain\'t gonna float:',val
             return
-        self.graph.setMarkerXPos(self.markerID, val)
-        self.graph.replot()
+        graph = self.plotWindow.graph
+        #self.graph.setMarkerXPos(self.markerID, val)
+        graph.setMarkerXPos(self.markerID, val)
+        #self.graph.replot()
+        graph.replot()
+        #self.valueChangedSignal.emit(val)
+        #ddict = self.getIntersections()
+        #self.intersectionsChangedSignal.emit(ddict)
         
 class LineEditDisplay(qt.QLineEdit):
     def __init__(self, combobox, ddict={}, parent=None):
@@ -197,7 +293,8 @@ class LineEditDisplay(qt.QLineEdit):
         qt.QLineEdit.setText(self, text)
     
 
-class SumRulesWindow(qt.QWidget):
+class SumRulesWindow(qt.QMainWindow):
+#class SumRulesWindow(qt.QWidget):
 
     # Curve labeling
     __xasBGmodel = 'xas BG model'
@@ -251,6 +348,8 @@ class SumRulesWindow(qt.QWidget):
         self.plotWindow.scanWindowInfoWidget.hide()
         self.plotWindow.toolBar.hide()
         self.plotWindow.graph.enablemarkermode()
+        
+        self.__saved = False
         
         # Marker Handling
         # spinboxDict connects marker movement to spinbox
@@ -390,7 +489,7 @@ class SumRulesWindow(qt.QWidget):
                     markerWidget, spinbox = self.addMarker(window=window,
                                                   label=markerLabel,
                                                   xpos=0.)
-                    self.valuesDict[window][markerLabel] = spinbox
+                    self.valuesDict[self.__tabBG][markerLabel] = spinbox
                     markerWidget.setContentsMargins(0,-8,0,-8)
                     if idx == 0: posx, posy = 0,0
                     if idx == 1: posx, posy = 1,0
@@ -440,8 +539,8 @@ class SumRulesWindow(qt.QWidget):
                 #stepRatioValidator.setTop(1.)
                 stepRatio.setMinimum(0.)
                 stepRatio.setMaximum(1.)
-                stepRatio.setSingleStep(.05)
-                stepRatio.setValue(.65)
+                stepRatio.setSingleStep(.025)
+                stepRatio.setValue(.5)
                 stepRatioLayout = qt.QHBoxLayout()
                 stepRatioLayout.addWidget(qt.QLabel('Step ratio'))
                 stepRatioLayout.addWidget(qt.HorizontalSpacer())
@@ -460,8 +559,8 @@ class SumRulesWindow(qt.QWidget):
                 #stepWidthValidator.setTop(1.)
                 stepWidth.setMinimum(0.)
                 stepWidth.setMaximum(1.)
-                stepWidth.setSingleStep(.05)
-                stepWidth.setValue(.35)
+                stepWidth.setSingleStep(.025)
+                stepWidth.setValue(.5)
                 stepWidthLayout = qt.QHBoxLayout()
                 stepWidthLayout.addWidget(qt.QLabel('Step width'))
                 stepWidthLayout.addWidget(qt.HorizontalSpacer())
@@ -473,7 +572,7 @@ class SumRulesWindow(qt.QWidget):
                 fitControlLayout = qt.QVBoxLayout()
                 fitControlLayout.addWidget(stepRatioWidget)
                 fitControlLayout.addWidget(stepWidthWidget)
-                fitControlGB = qt.QGroupBox('Fit control')
+                fitControlGB = qt.QGroupBox('Background model control')
                 fitControlGB.setLayout(fitControlLayout)
                 # END Fit control group box
                 
@@ -492,11 +591,14 @@ class SumRulesWindow(qt.QWidget):
                 
                 stepRatio.valueChanged['double'].connect(self.estimateBG)
                 stepWidth.valueChanged['double'].connect(self.estimateBG)
-                self.valuesDict[self.__tabBG]['Step Ratio'] = stepRatio
-                self.valuesDict[self.__tabBG]['Step Width'] = stepWidth
+                self.valuesDict[self.__tabBG]\
+                        ['Step Ratio'] = stepRatio
+                self.valuesDict[self.__tabBG]\
+                        ['Step Width'] = stepWidth
                             
             #markerWidget, spinbox = self.addMarker(window=window,label=window,xpos=700.)
             elif window == self.__tabInt:
+                # BEGIN Integral marker groupbox
                 pqLayout = qt.QVBoxLayout()
                 pqLayout.setContentsMargins(0,0,0,0)
                 for markerLabel in self.xmcdMarkerList:
@@ -504,19 +606,93 @@ class SumRulesWindow(qt.QWidget):
                     markerWidget, spinbox = self.addMarker(window=window,
                                                   label=markerLabel,
                                                   xpos=0.)
-                    self.valuesDict[window][markerLabel] = spinbox
+                    self.valuesDict[self.__tabInt][markerLabel] = spinbox
                     markerWidget.setContentsMargins(0,-8,0,-8)
+                    integralVal = qt.QLineEdit()
+                    integralVal.setReadOnly(True)
+                    integralVal.setMaximumWidth(120)
+                    #spinbox.valueChanged['QString'].connect(self.getIntegralValue)
+                    valLabel = qt.QLabel('Integral Value:')
+                    mwLayout = markerWidget.layout()
+                    mwLayout.addWidget(valLabel)
+                    mwLayout.addWidget(integralVal)
                     pqLayout.addWidget(markerWidget)
+                    spinbox.valueChanged.connect(self.calcMagneticMoments)
+                    key = 'Integral ' + markerLabel
+                    self.valuesDict[self.__tabInt][key] = integralVal
                 pqGB = qt.QGroupBox('XAS/XMCD integrals')
                 pqGB.setLayout(pqLayout)
+                # END Integral marker groupbox
+                
+                # BEGIN magnetic moments groupbox
+                mmLayout = qt.QVBoxLayout()
+                mmLayout.setContentsMargins(0,0,0,0)
+                
+                text = 'Orbital Magnetic Moment'
+                mmLineLayout = qt.QHBoxLayout()
+                self.mmOrbt = qt.QLineEdit()
+                self.mmOrbt.setReadOnly(True)
+                self.mmOrbt.setMaximumWidth(120)
+                mmLineLayout.addWidget(qt.QLabel(text))
+                mmLineLayout.addWidget(qt.HorizontalSpacer())
+                mmLineLayout.addWidget(qt.QLabel('mO = '))
+                mmLineLayout.addWidget(self.mmOrbt)
+                #self.triggerCalcmmLineLayout.setText
+                mmLineWidget = qt.QWidget()
+                mmLineWidget.setLayout(mmLineLayout)
+                mmLineWidget.setContentsMargins(0,-8,0,-8)
+                mmLayout.addWidget(mmLineWidget)
+                
+                text = 'Spin Magnetic Moment'
+                mmLineLayout = qt.QHBoxLayout()
+                self.mmSpin = qt.QLineEdit()
+                self.mmSpin.setReadOnly(True)
+                self.mmSpin.setMaximumWidth(120)
+                mmLineLayout.addWidget(qt.QLabel(text))
+                mmLineLayout.addWidget(qt.HorizontalSpacer())
+                mmLineLayout.addWidget(qt.QLabel('mS = '))
+                mmLineLayout.addWidget(self.mmSpin)
+                #self.triggerCalcmmLineLayout.setText
+                mmLineWidget = qt.QWidget()
+                mmLineWidget.setLayout(mmLineLayout)
+                mmLineWidget.setContentsMargins(0,-8,0,-8)
+                mmLayout.addWidget(mmLineWidget)
+                
+                text = 'Ratio Magnetic Moments'
+                mmLineLayout = qt.QHBoxLayout()
+                self.mmRatio = qt.QLineEdit()
+                self.mmRatio.setReadOnly(True)
+                self.mmRatio.setMaximumWidth(120)
+                mmLineLayout.addWidget(qt.QLabel(text))
+                mmLineLayout.addWidget(qt.HorizontalSpacer())
+                mmLineLayout.addWidget(qt.QLabel('mO/mS = '))
+                mmLineLayout.addWidget(self.mmRatio)
+                #self.triggerCalcmmLineLayout.setText
+                mmLineWidget = qt.QWidget()
+                mmLineWidget.setLayout(mmLineLayout)
+                mmLineWidget.setContentsMargins(0,-8,0,-8)
+                mmLayout.addWidget(mmLineWidget)
+                
+                mmGB = qt.QGroupBox('Magnetic moments')
+                mmGB.setLayout(mmLayout)
+                # END magnetic moments groupbox
+                
                 xmcdTabLayout = qt.QVBoxLayout()
                 xmcdTabLayout.addWidget(pqGB)
+                xmcdTabLayout.addWidget(mmGB)
                 xmcdTabLayout.addWidget(qt.VerticalSpacer())
                 xmcdWidget = qt.QWidget()
                 xmcdWidget.setLayout(xmcdTabLayout)
                 self.tabWidget.addTab(
                             xmcdWidget,
                             window.upper())
+                            
+                self.valuesDict[self.__tabInt]\
+                    ['Orbital Magnetic Moment'] = self.mmOrbt
+                self.valuesDict[self.__tabInt]\
+                    ['Spin Magnetic Moment'] = self.mmSpin
+                self.valuesDict[self.__tabInt]\
+                    ['Ratio Magnetic Moments'] = self.mmRatio
             #self.tabWidget.addTab(markerWidget, window.upper())
         # Add to self.valuesDict
 
@@ -540,10 +716,15 @@ class SumRulesWindow(qt.QWidget):
              self._handleGraphSignal)
         
         # Layout
+        mainWidget = qt.QWidget()
         mainLayout = qt.QVBoxLayout()
         mainLayout.addWidget(self.plotWindow)
         mainLayout.addWidget(self.tabWidget)
         mainLayout.setContentsMargins(1,1,1,1)
+        mainWidget.setLayout(mainLayout)
+        #self.setLayout(mainLayout)
+        self.setCentralWidget(mainWidget)
+        
         
         # Data handling:
         # Each is Tuple (x,y)
@@ -552,8 +733,9 @@ class SumRulesWindow(qt.QWidget):
         self.xasData     = None
         self.xasDataCorr = None
         self.xasDataBG   = None
+        self.xmcdInt     = None
+        self.xasInt      = None
         
-        self.setLayout(mainLayout)
         tmpDict = {
                 'background' : {
                     'Pre Min': 658.02,
@@ -562,19 +744,198 @@ class SumRulesWindow(qt.QWidget):
                     'Post Max': 808.7,
                     'Edge 1': 721.44,
                     'Edge 2': 708.7,
+                    'Step Ratio': 0.25,
+                    'Step Width': 0.25
                 },
                 'integration': {
-                    'p': 900,
-                    'q': 900
+                    'p': 717.3,
+                    'q': 740.,
+                    'r': 732.
                 },
                 'element': {
                     'electron configuration': '3d',
+                    'electron occupation': '6.6',
                     'element': 'Fe',
                     'edge1Transistion': 'L3M4',
                     'edge2Transistion': 'L2M4'
                 }
         }
+#        for k0,v0 in self.valuesDict.items():
+#            print k0
+#            for k1, v1 in v0.items():
+#                print '\t'+k1
+        
         self.setValuesDict(tmpDict)
+        self._createMenuBar()
+
+    def calcMagneticMoments(self):
+        print 'calcMM -- current tab:', self.tabWidget.currentIndex()
+        # 0. Get Marker intersections
+        ddict = self.valuesDict
+        pqr = []
+        mathObj = Mathematics()
+        for marker in self.xmcdMarkerList:
+            if marker in [self.__intP, self.__intQ]:
+                curve = 'xmcd Int '
+            else:
+                curve = 'xas Int '
+            spinbox = ddict[self.__tabInt][marker]
+            integralVals = spinbox.getIntersections()
+            x,y = integralVals.get(curve, (float('NaN'),float('NaN')))
+            # Get relevant result. Present curves are: xas Int, xmcd Int
+            #relevant = [legend for legend in intersections.keys() if legend.endswith('Int')]
+            key = 'Integral ' + marker
+            lineEdit = ddict[self.__tabInt][key]
+            lineEdit.setText(str(y))
+            pqr += [y]
+        # 1. Display intergral values
+        #def magneticMoment(self, p, q, r, n, econf = '3d'):
+        # 2. Calculate the moments
+        p, q, r = pqr
+        electronOccupation = ddict[self.__tabElem]['electron occupation']
+        try:
+            n = float(electronOccupation.text())
+        except ValueError:
+            print 'calcMM -- Could not convert electron occupation'
+            return
+        mmO, mmS, mmR = mathObj.magneticMoment(p,q,r,n)
+        # 3. Display moments
+        self.mmOrbt.setText(str(mmO))
+        self.mmSpin.setText(str(mmS))
+        self.mmRatio.setText(str(mmR))
+
+    def getIntegralValues(self, pos):
+        dataList = [self.xmcdInt, self.xasInt]
+        res      = float('NaN')
+        resList  = [res] * len(dataList)
+        if not self.xmcdInt:
+            print 'getIntegralValues -- self.xmcdInt not present'
+            return
+        if not self.xasInt:
+            print 'getIntegralValues -- self.xasInt not present'
+            return
+        for listIdx, data in enumerate(dataList):
+            x, y = data
+            if numpy.all(pos < x) or numpy.all(x < pos):
+                print 'getIntegralValues -- Marker position outside of data range'
+                continue
+                #raise ValueError('Marker outside of data range')
+            if pos in x:
+                idx = numpy.where(x == pos)
+                res = y[idx]
+            else:
+                # Intepolation needed, assume well
+                # behaved data (c.f. copy routine)
+                lesserIdx  = numpy.nonzero(x < pos)[0][-1]
+                greaterIdx = numpy.nonzero(x > pos)[0][0]
+                dy = y[lesserIdx] - y[greaterIdx]
+                dx = x[lesserIdx] - x[greaterIdx]
+                res = dy/dx * (pos - x[lesserIdx]) + y[lesserIdx]
+            resList[listIdx] = res
+        #return res
+        print 'getIntegralValues -- Result:', resList
+
+    def _createMenuBar(self):
+        # Creates empty menu bar, if none existed before
+        menu = self.menuBar()
+        menu.clear()
+        
+    
+        # 'File' Menu
+        file = menu.addMenu('&File')
+        # Populate the 'File' menu
+        file.addAction('&Save', self.saveConfiguration)
+        file.addAction('&Load', self.loadConfiguration)
+        file.addSeparator()
+        file.addAction('E&xit', self.close)
+
+    def openDataFile(self):
+        pass
+
+    def saveConfiguration(self):
+        ddict    = self.getValuesDict()
+        saveDir  = PyMcaDirs.outputDir
+        filter   = 'Sum Rules Analysis files (*.sra);;All files (*.*)'
+        selectedFilter = 'Sum Rules Analysis files (*.sra)'
+        
+        filename = qt.QFileDialog.getSaveFileName(self,
+                               'Save Sum Rule Analysis',
+                               saveDir,
+                               'Sum Rules Analysis files (*.sra);;All files (*.*)',
+                               'Sum Rules Analysis files (*.sra)')
+        if len(filename) == 0:
+            return
+        else:
+            filename = str(filename)
+        if not filename.endswith('.sra'):
+            filename += '.sra'
+            
+        confDict = ConfigDict.ConfigDict(self.getValuesDict())
+        try:
+            confDict.write(filename)
+        except IOError:
+            msg = qt.QMessageBox()
+            msg.setWindowTitle('Sum Rules Analysis Error')
+            msg.setIcon(qt.QMessageBox.Warning)
+            msg.setText('Unable to write configuration to \'%s\''%filename)
+            msg.exec_()
+            return
+        self.__saved = True
+    
+    def loadConfiguration(self):
+        confDict = ConfigDict.ConfigDict()
+        ddict    = self.getValuesDict()
+        loadDir  = PyMcaDirs.outputDir
+        filter   = 'Sum Rules Analysis files (*.sra);;All files (*.*)'
+        selectedFilter = 'Sum Rules Analysis files (*.sra)'
+        
+        filename = qt.QFileDialog.getOpenFileName(self,
+                               'Load Sum Rule Analysis',
+                               loadDir,
+                               filter,
+                               selectedFilter)
+        if len(filename) == 0:
+            return
+        else:
+            filename = str(filename)
+        try:
+            confDict.read(filename)
+        except IOError:
+            msg = qt.QMessageBox()
+            msg.setTitle('Sum Rules Analysis Error')
+            msg.setIcon(qt.QMessageBox.Warning)
+            msg.setText('Unable to read configuration file \'%s\''%filename)
+            return
+        try:
+            self.setValuesDict(confDict)
+            #keysLoaded = confDict.keys()
+            #keysValues = self.valuesDict.keys()
+        except KeyError as e:
+            if DEBUG:
+                print('loadConfiguration -- Key Error in \'%s\''%filename)
+                print('\tMessage:', e)
+            else:
+                msg = qt.QMessageBox()
+                msg.setTitle('Sum Rules Analysis Error')
+                msg.setIcon(qt.QMessageBox.Warning)
+                msg.setText('Malformed configuration file \'%s\''%filename)
+            return
+        self.__saved = True
+        
+
+    def close(self):
+        if not self.__saved:
+            msg = qt.QMessageBox()
+            msg.setWindowTitle('Sum Rules Tool')
+            msg.setIcon(qt.QMessageBox.Warning)
+            msg.setText('The configuration has changed!\nAre you shure you want to close the window?')
+            msg.setStandardButtons(qt.QMessageBox.Cancel | qt.QMessageBox.Discard)
+            if msg.exec_() == qt.QMessageBox.Cancel:
+                return
+        qt.sQMainWindow.close(self)
+    
+    def _createStatusBar(self):
+        pass
 
     def setElectronConf(self, eConf):
         # updates the element combo box
@@ -685,6 +1046,14 @@ class SumRulesWindow(qt.QWidget):
                         msg += ' while setting marker positions. Value:', value
                         print(msg)
                     obj.setValue(tmp)
+                elif isinstance(obj, qt.QDoubleSpinBox):
+                    try:
+                        tmp = float(value)
+                    except ValueError:
+                        msg  = 'setValuesDict -- Float conversion failed'
+                        msg += ' while setting QDoubleSpinBox value. Value:', value
+                        print(msg)
+                    obj.setValue(tmp)
                 elif isinstance(obj, qt.QComboBox):
                     idx = obj.findText(qt.QString(value))
                     obj.setCurrentIndex(idx)
@@ -694,9 +1063,10 @@ class SumRulesWindow(qt.QWidget):
                     obj.checkComboBox()
                 elif isinstance(obj, qt.QLineEdit):
                     if value:
-                        obj.setText(value) 
+                        tmp = str(value)
+                        obj.setText(tmp) 
                     else:
-                        obj.setText('')
+                        obj.setText('???')
                 elif isinstance(obj, dict):
                     obj = value
                 else:
@@ -880,6 +1250,8 @@ class SumRulesWindow(qt.QWidget):
                 xyList += [(xasBGX, xasBGY, self.__xasBGmodel)]
         elif window == self.__tabInt:
             if (self.xasDataBG is None):
+                self.xmcdInt = None
+                self.xasInt  = None
                 return
             if self.xasDataCorr is None:
                 # Calculate xasDataCorr
@@ -892,13 +1264,14 @@ class SumRulesWindow(qt.QWidget):
             xasX,  xasY  = self.xasDataCorr
             xmcdIntY = mathObj.cumtrapz(y=xmcdY, x=xmcdX)
             xmcdIntX = .5 * (xmcdX[1:] + xmcdX[:-1])
-            
             xasIntY  = mathObj.cumtrapz(y=xasY,  x=xasX)
             xasIntX  = .5 * (xasX[1:] + xasX[:-1])
             ylabel += ' integral'
             xyList = [(xmcdIntX, xmcdIntY, 'xmcd Int'),
                       (xasX,     xasY,     'xas corr'),
                       (xasIntX,  xasIntY,  'xas Int')]
+            self.xmcdInt = xmcdIntX, xmcdIntY
+            self.xasInt = xasIntX, xasIntY
         for x,y,legend in xyList:
             self.plotWindow.newCurve(
                     x=x, 
@@ -919,8 +1292,9 @@ class SumRulesWindow(qt.QWidget):
         
     def addMarker(self, window, label='X MARKER', xpos=None):
         # Add spinbox controlling the marker
-        graph = self.plotWindow.graph
-        spinbox = MarkerSpinBox(window, graph, label)
+        #graph = self.plotWindow.graph
+        #spinbox = MarkerSpinBox(window, graph, label)
+        spinbox = MarkerSpinBox(window, self.plotWindow, label)
 
         # Connects
         self.tabChangedSignal.connect(spinbox._setMarkerFollowMouse)
@@ -953,68 +1327,21 @@ class SumRulesWindow(qt.QWidget):
         tab = self.tabList[idx]
         print 'Tab changed -- idx:',idx,'tab:',tab
         self.plotOnDemand(window=tab)
+        if tab == self.__tabInt:
+            for marker in self.xmcdMarkerList:
+                sb = self.valuesDict[self.__tabInt][marker]
+                print sb.getIntersections()
+                #self.getIntegralValues()
         self.tabChangedSignal.emit(tab)
+    
+    def loadData(self):
+        # Hier gehts weiter:
+        # 1. Lade beliebige spec Datei und ueberlasse es dem User auszuwaehlen,
+        #    welche Spalten er auswaehlen moechte.
+        #    -> Erstelle Fensterklasse.. Was hat PyMCA zu bieten?
+        # 2. Nutze setRawData(x, y, identifier)
+        pass
         
-
-class SumRulesPlugin(Plugin1DBase.Plugin1DBase):
-    def __init__(self, plotWindow, **kw):
-        Plugin1DBase.Plugin1DBase.__init__(self, plotWindow, **kw)
-        self.__randomization = True
-        self.__methodKeys = []
-        self.methodDict = {}
-
-        function = self.dummy
-        method = "Dummy function"
-        text = "Does nothing"
-        info = text
-        icon = None
-        self.methodDict[method] = [function,
-                                   info,
-                                   icon]
-        self.__methodKeys.append(method)
-        
-        self._widget = None
-        
-    #Methods to be implemented by the plugin
-    def getMethods(self, plottype=None):
-        """
-        A list with the NAMES  associated to the callable methods
-        that are applicable to the specified plot.
-
-        Plot type can be "SCAN", "MCA", None, ...        
-        """
-#        if self.__randomization:
-#            return self.__methodKeys[0:1] +  self.__methodKeys[2:]
-#        else:
-#            return self.__methodKeys[1:]
-        return self.__methodKeys
-
-    def getMethodToolTip(self, name):
-        """
-        Returns the help associated to the particular method name or None.
-        """
-        return self.methodDict[name][1]
-
-    def getMethodPixmap(self, name):
-        """
-        Returns the pixmap associated to the particular method name or None.
-        """
-        return None
-
-    def applyMethod(self, name):
-        """
-        The plugin is asked to apply the method associated to name.
-        """
-        return self.methodDict[name][0]()
-
-    def showWidget(self):
-        if self._widget is None:
-            self._widget = SumRulesWindow()
-            self._widget.show()
-        else:
-            self._widget.show()
-            self._widget.raise_()
-
 MENU_TEXT = "Sum Rules Plugin"
 def getPlugin1DInstance(plotWindow, **kw):
     ob = AlignmentScanPlugin(plotWindow)
