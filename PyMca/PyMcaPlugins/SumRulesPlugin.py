@@ -7,8 +7,11 @@ from PyMca import SpecfitFunctions
 from PyMca import Elements
 from PyMca import ConfigDict
 from PyMca import PyMcaDirs
+from PyMca import QSpecFileWidget
+from PyMca import SpecFileDataSource
 from PyMca.SpecfitFuns import upstep, downstep
 from PyMca.Gefit import LeastSquaresFit as LSF
+from os.path import isdir as osPathIsDir
 
 try:
     from PyMca import Plugin1DBase
@@ -836,6 +839,9 @@ class SumRulesWindow(qt.QMainWindow):
         print 'getIntegralValues -- Result:', resList
 
     def _createMenuBar(self):
+        # Always create actions before populating the MenuBar
+        self._createActions()
+        
         # Creates empty menu bar, if none existed before
         menu = self.menuBar()
         menu.clear()
@@ -844,13 +850,38 @@ class SumRulesWindow(qt.QMainWindow):
         # 'File' Menu
         file = menu.addMenu('&File')
         # Populate the 'File' menu
-        file.addAction('&Save', self.saveConfiguration)
-        file.addAction('&Load', self.loadConfiguration)
+        file.addAction(self.openAction)
+        file.addAction(self.loadAction)
+        file.addAction(self.saveAction)
         file.addSeparator()
         file.addAction('E&xit', self.close)
-
-    def openDataFile(self):
-        pass
+        
+    def _createActions(self):
+        self.openAction = qt.QAction('&Open', self)
+        self.openAction.setShortcut(qt.Qt.CTRL+qt.Qt.Key_O)
+        self.openAction.setStatusTip('Opened file')
+        self.openAction.setToolTip('Opens either a data file (*.spec)')
+        self.openAction.triggered.connect(self.loadData)
+        
+        self.loadAction = qt.QAction('&Load', self)
+        self.loadAction.setShortcut(qt.Qt.CTRL+qt.Qt.Key_L)
+        self.loadAction.setStatusTip('Loaded analysis file')
+        self.loadAction.setToolTip('Loads an existing analysis file (*.sra)')
+        self.loadAction.triggered.connect(self.loadConfiguration)
+        
+        self.saveAction = qt.QAction('&Save', self)
+        self.saveAction.setShortcut(qt.Qt.CTRL+qt.Qt.Key_S)
+        self.saveAction.setStatusTip('Saved analysis file')
+        self.saveAction.setToolTip('Save analysis in file (*.sra)')
+        self.saveAction.triggered.connect(self.saveConfiguration)
+        
+    def loadData(self):
+        # Hier gehts weiter:
+        # 1. Lade beliebige spec Datei und ueberlasse es dem User auszuwaehlen,
+        #    welche Spalten er auswaehlen moechte.
+        #    -> Erstelle Fensterklasse.. Was hat PyMCA zu bieten?
+        # 2. Nutze setRawData(x, y, identifier)
+        print 'loadData -- Here!'
 
     def saveConfiguration(self):
         ddict    = self.getValuesDict()
@@ -1334,19 +1365,22 @@ class SumRulesWindow(qt.QMainWindow):
                 #self.getIntegralValues()
         self.tabChangedSignal.emit(tab)
     
-    def loadData(self):
-        # Hier gehts weiter:
-        # 1. Lade beliebige spec Datei und ueberlasse es dem User auszuwaehlen,
-        #    welche Spalten er auswaehlen moechte.
-        #    -> Erstelle Fensterklasse.. Was hat PyMCA zu bieten?
-        # 2. Nutze setRawData(x, y, identifier)
-        pass
+    def keyPressEvent(self, event):
+        if event.key() == qt.Qt.Key_F2:
+            # Switch to tab Element
+            idx = self.tabList.index(self.__tabElem)
+            self.tabWidget.setCurrentIndex(idx)
+        elif event.key() == qt.Qt.Key_F3:
+            # Switch to tab Background
+            idx = self.tabList.index(self.__tabBG)
+            self.tabWidget.setCurrentIndex(idx)
+        elif event.key() == qt.Qt.Key_F4:
+            # Switch to tab Integration
+            idx = self.tabList.index(self.__tabInt)
+            self.tabWidget.setCurrentIndex(idx)
+        else:
+            qt.QWidget.keyPressEvent(self, event)
         
-MENU_TEXT = "Sum Rules Plugin"
-def getPlugin1DInstance(plotWindow, **kw):
-    ob = AlignmentScanPlugin(plotWindow)
-    return ob
-
 def getData(fn='/home/truter/lab/datasets/sum_rules/Fe_L23/xld_analysis.spec'):
     analysis = sf.specfile.Specfile(fn)
     xmcdArr = []
@@ -1360,6 +1394,41 @@ def getData(fn='/home/truter/lab/datasets/sum_rules/Fe_L23/xld_analysis.spec'):
     xasArr  = spec[4][:]
     return x, avgA, avgB, xmcdArr, xasArr
 
+class LoadDichorismDataDialog(qt.QDialog):
+    def __init__(self, parent=None):
+        qt.QDialog.__init__(self, parent)
+        
+        self.fileSelector = qt.QFileDialog(parent, qt.Qt.Widget)
+        self.fileSelector.setFilter('Spec Files (*.spec);;'
+                                   +'All Files (*.*)')
+        
+        self.specFileWidget = QSpecFileWidget.QSpecFileWidget(
+                                        parent=parent,
+                                        autoreplace=False)
+        self.specFileWidget.autoAddBox.parent().hide()
+        self.specFileWidget.mainTab.removeTab(1)
+        self.specFileWidget.buttonBox.hide()
+        
+        mainLayout = qt.QHBoxLayout()
+        mainLayout.addWidget(self.fileSelector)
+        mainLayout.addWidget(self.specFileWidget)
+        self.setLayout(mainLayout)
+        
+        #
+        # Signals
+        #
+        self.fileSelector.currentChanged.connect(self.setDataSource)
+    
+    def setDataSource(self, filename):
+        filename = str(filename)
+        if osPathIsDir(filename) or (not filename.endswith('.spec')):
+            return
+        src = SpecFileDataSource.SpecFileDataSource(filename)
+        self.specFileWidget.setDataSource(src)
+        
+        
+        
+
 if __name__ == '__main__':
    
     app = qt.QApplication([])
@@ -1369,5 +1438,6 @@ if __name__ == '__main__':
     win.setRawData(x,xmcd, identifier='xmcd')
     #win.plotWindow.newCurve(x,xas, legend='xas', xlabel='ene_st', ylabel='zratio', info={}, replot=False, replace=False)
     win.setRawData(x,xas, identifier='xas')
+    win = LoadDichorismDataDialog()
     win.show()
     app.exec_()
