@@ -20,6 +20,7 @@ except ImportError:
     from . import Plugin1DBase
 
 DEBUG = 1
+QTVERSION = qt.qVersion()
 
 class Mathematics(object):
     def __init__(self):
@@ -1394,30 +1395,71 @@ def getData(fn='/home/truter/lab/datasets/sum_rules/Fe_L23/xld_analysis.spec'):
     xasArr  = spec[4][:]
     return x, avgA, avgB, xmcdArr, xasArr
 
-class LoadDichorismDataDialog(qt.QDialog):
+#class LoadDichorismDataDialog(qt.QDialog):
+class LoadDichorismDataDialog(qt.QFileDialog):
+    
+    dataInputSignal = qt.pyqtSignal(object)
+    
     def __init__(self, parent=None):
-        qt.QDialog.__init__(self, parent)
+        #qt.QDialog.__init__(self, parent)
+        qt.QFileDialog.__init__(self, parent)
         
-        self.fileSelector = qt.QFileDialog(parent, qt.Qt.Widget)
-        self.fileSelector.setFilter('Spec Files (*.spec);;'
-                                   +'All Files (*.*)')
+        self.setFilter('Spec Files (*.spec);;'
+                      +'All Files (*.*)')
         
+        # Take the QSpecFileWidget class as used
+        # in the main window to select data and
+        # insert it into a QFileDialog. Emit the
+        # selected data at acceptance
         self.specFileWidget = QSpecFileWidget.QSpecFileWidget(
                                         parent=parent,
                                         autoreplace=False)
+        # Hide the widget containing the Auto Add/Replace
+        # checkboxes
         self.specFileWidget.autoAddBox.parent().hide()
-        self.specFileWidget.mainTab.removeTab(1)
+        # Remove the tab widget, only the counter widget
+        # is needed. Remember: close() only hides a widget
+        # however the widget persists in the memory.
+        #self.specFileWidget.mainTab.removeTab(1)
+        self.specFileWidget.mainTab.hide()
+        #self.counterTab = self.specFileWidget.mainTab.widget(0)
+        self.specFileWidget.mainLayout.addWidget(self.specFileWidget.cntTable)
+        self.specFileWidget.cntTable.show()
+        # Change the table headers in cntTable
+        # Note: By conicidence, the original SpecFileCntTable
+        # has just enough columns as we need. Here, we rename
+        # the last two:
+        # 'y'   -> 'XAS'
+        # 'mon' -> 'XMCD'
+        labels = ['Label', 'X', 'XAS', 'XMCD']
+        table  = self.specFileWidget.cntTable
+        for idx in range(len(labels)):
+            item = table.horizontalHeaderItem(idx)
+            if item is None:
+                item = qt.QTableWidgetItem(labels[idx],
+                                           qt.QTableWidgetItem.Type)
+            item.setText(labels[idx])
+            table.setHorizontalHeaderItem(idx,item)
+
+        
+        # Hide the widget containing the Add, Replace, ...
+        # PushButtons
         self.specFileWidget.buttonBox.hide()
         
-        mainLayout = qt.QHBoxLayout()
-        mainLayout.addWidget(self.fileSelector)
-        mainLayout.addWidget(self.specFileWidget)
-        self.setLayout(mainLayout)
+        # Change selection behavior/mode in the scan list so
+        # that only a single scan can be selected at a time
+        self.specFileWidget.list.setSelectionBehavior(qt.QAbstractItemView.SelectRows)
+        self.specFileWidget.list.setSelectionMode(qt.QAbstractItemView.SingleSelection)
+        
+        # Tinker with the native layout of QFileDialog
+        mainLayout = self.layout()
+        mainLayout.addWidget(self.specFileWidget, 0, 4, 4, 1)
         
         #
         # Signals
         #
-        self.fileSelector.currentChanged.connect(self.setDataSource)
+        self.currentChanged.connect(self.setDataSource)
+        self.fileSelected.connect(self.processSelectedFile)
     
     def setDataSource(self, filename):
         filename = str(filename)
@@ -1425,7 +1467,69 @@ class LoadDichorismDataDialog(qt.QDialog):
             return
         src = SpecFileDataSource.SpecFileDataSource(filename)
         self.specFileWidget.setDataSource(src)
+        # TODO: Check if counters are present that start with XMCD
+        #table  = self.specFileWidget.cntTable
+        #table.cellWidget(...)
+    
+    def processSelectedFile(self, filename):
+        filename = str(filename)
+        if (not filename.endswith('.spec')):
+            return
+            
+        scanList = self.specFileWidget.list.selectedItems()
+        if len(scanList) == 0:
+            self.errorMessageBox('No scan selected!')
+            return
+        else:
+            scan = scanList[0]
+            scanNo = str(scan.text(1))
+        print 'scanNo =',scanNo
+            
+        table = self.specFileWidget.cntTable
+        # ddict['x'] -> 'X'
+        # ddict['y'] -> 'XAS'
+        # ddict['m'] -> 'XMCD'
+        ddict   = table.getCounterSelection()
+        print ddict
+        colX    = ddict['x']
+        colXas  = ddict['y']
+        colXmcd = ddict['m']
+        # Check if only one is selected
+        if len(colX) != 1:
+            self.errorMessageBox('Single counter must be set as X')
+            return
+        else:
+            colX = colX[0]
+            
+        if len(colXas) != 1:
+            self.errorMessageBox('Single counter must be set as XAS')
+            return
+        else:
+            colXas = colXas[0]
+            
+        if len(colXmcd) != 1:
+            self.errorMessageBox('Single counter must be set as XMCD')
+            return
+        else:
+            colXmcd = colXmcd[0]
+        # Extract data
+        dataObj = self.specFileWidget.data.getDataObject(scanNo)
+        data    = dataObj.data
+        # data has format (rows, cols) -> (steps, counters)
+        out = {}
+        out['x']    = data[:, colX]
+        out['xas']  = data[:, colXas]
+        out['xmcd'] = data[:, colXmcd]
         
+        self.dataInputSignal.emit(out)
+        self.destroy()
+        
+    def errorMessageBox(self, msg):
+        box = qt.QMessageBox()
+        box.setWindowTitle('Sum Rules Load Data Error')
+        box.setIcon(qt.QMessageBox.Warning)
+        box.setText(msg)
+        box.exec_()
         
         
 
