@@ -20,7 +20,7 @@ except ImportError:
     from . import Plugin1DBase
 
 DEBUG = 1
-QTVERSION = qt.qVersion()
+NEWLINE = '\n'
 
 class Mathematics(object):
     def __init__(self):
@@ -56,6 +56,8 @@ class Mathematics(object):
             waveletData = wavelet(min(10 * width, len(data)), width)
             out[idx, :] = numpy.convolve(data, waveletData, mode='same')
         return out
+
+    #def normalizeXAS(self, x):
 
     def cumtrapz(self, y, x=None, dx=1.0):
         y = y[:]
@@ -219,6 +221,18 @@ class MarkerSpinBox(qt.QDoubleSpinBox):
         #print 'getIntersections -- Result:', resDict
         return resDict
 
+    def hideMarker(self):
+        graph = self.plotWindow.graph
+        if self.markerID in graph.markersdict.keys():
+            marker = graph.markersdict[self.markerID]['marker']
+            marker.hide()
+            
+    def showMarker(self):
+        graph = self.plotWindow.graph
+        if self.markerID in graph.markersdict.keys():
+            marker = graph.markersdict[self.markerID]['marker']
+            marker.show()
+
     def _setMarkerFollowMouse(self, windowTitle):
         windowTitle = str(windowTitle)
         graph = self.plotWindow.graph
@@ -326,6 +340,7 @@ class SumRulesWindow(qt.QMainWindow):
     xmcdMarkerList = [__intP,
                       __intQ,
                       __intR]
+    edgeMarkerList = []
     
     # Elements with 3d final state
     transistionMetals = ['Ti', 'V', 'Cr', 'Mn',\
@@ -353,7 +368,8 @@ class SumRulesWindow(qt.QMainWindow):
         self.plotWindow.toolBar.hide()
         self.plotWindow.graph.enablemarkermode()
         
-        self.__saved = False
+        self.__savedConf = False
+        self.__savedData = False
         
         # Marker Handling
         # spinboxDict connects marker movement to spinbox
@@ -367,16 +383,12 @@ class SumRulesWindow(qt.QMainWindow):
         self.tabWidget = qt.QTabWidget()
         for window in self.tabList:
             if window == self.__tabElem:
+                # BEGIN sampleGB
+                # electron configuration combo box
                 sampleGB         = qt.QGroupBox('Sample definition')
                 sampleLayout     = qt.QVBoxLayout()
                 sampleGB.setLayout(sampleLayout)
                 
-                absorptionGB     = qt.QGroupBox('X-ray absorption edges')
-                absorptionLayout = qt.QVBoxLayout()
-                absorptionGB.setLayout(absorptionLayout)
-                
-                # BEGIN sampleGB
-                # electron configuration combo box
                 self.elementEConfCB = qt.QComboBox()
                 self.elementEConfCB.setMinimumWidth(100)
                 self.elementEConfCB.addItems(['']+self.electronConfs)
@@ -389,7 +401,7 @@ class SumRulesWindow(qt.QMainWindow):
                 elementEConfWidget = qt.QWidget()
                 elementEConfWidget.setLayout(elementEConfLayout)
                 sampleLayout.addWidget(elementEConfWidget)
-                # element selection combo box
+                # Element selection combo box
                 self.elementCB = qt.QComboBox()
                 self.elementCB.setMinimumWidth(100)
                 self.elementCB.addItems([''])
@@ -421,6 +433,10 @@ class SumRulesWindow(qt.QMainWindow):
                 
                 # BEGIN absorptionGB: X-ray absorption edge 
                 # selection combo box by transition (L3M1, etc.)
+                absorptionGB     = qt.QGroupBox('X-ray absorption edges')
+                absorptionLayout = qt.QVBoxLayout()
+                absorptionGB.setLayout(absorptionLayout)
+                
                 self.edge1CB = qt.QComboBox()
                 self.edge1CB.setMinimumWidth(100)
                 self.edge1CB.addItems([''])
@@ -448,7 +464,48 @@ class SumRulesWindow(qt.QMainWindow):
                 edge2Widget = qt.QWidget()
                 edge2Widget.setLayout(edge2Layout)
                 absorptionLayout.addWidget(edge2Widget)
+                absorptionLayout.addWidget(qt.VerticalSpacer())
                 # END absorptionGB
+                
+                # Combine sampleGB & absorptionGB in one Line
+                topLineLayout = qt.QHBoxLayout()
+                topLineLayout.setContentsMargins(0,0,0,0)
+                topLineLayout.addWidget(sampleGB)
+                topLineLayout.addWidget(absorptionGB)
+                
+                topLine = qt.QWidget()
+                topLine.setLayout(topLineLayout)
+                
+                # BEGIN Preproc
+                preprocLayout = qt.QVBoxLayout()
+                
+                proprocNormalize = qt.QCheckBox()
+                #proprocNormalize.stateChanged['int'].connect(self.triggerNormalization())
+                preprocNormalizeLayout = qt.QVBoxLayout()
+                preprocNormalizeLayout.setContentsMargins(0,0,0,0)
+                preprocNormalizeLayout.addWidget(qt.QLabel(
+                        'Normalize XAS Signal (pre-edge region to 0, post-edge region to 1)'))
+                #preprocNormalizeLayout.addWidget(qt.HorizontalSpacer())
+                preprocNormalizeLayout.addWidget(proprocNormalize)
+                preprocNormWidget = qt.QWidget()
+                preprocNormWidget.setLayout(preprocNormalizeLayout)                
+                
+                proprocDetrend = qt.QCheckBox()
+                #proprocNormalize.stateChanged['int'].connect(self.triggerDetrend())
+                preprocDetrendLayout = qt.QVBoxLayout()
+                preprocDetrendLayout.setContentsMargins(0,0,0,0)
+                preprocDetrendLayout.addWidget(qt.QLabel(
+                        'Detrend XMCD Signal (Subtracts linear fit of pre-edge Region from the signal)'))
+                #preprocDetrendLayout.addWidget(qt.HorizontalSpacer())
+                preprocDetrendLayout.addWidget(proprocDetrend)
+                preprocDetrendWidget = qt.QWidget()
+                preprocDetrendWidget.setLayout(preprocDetrendLayout)  
+                
+                preproc = qt.QGroupBox('Data Preprocessing')
+                preproc.setLayout(preprocLayout)
+                preprocLayout.addWidget(preprocNormWidget)
+                preprocLayout.addWidget(preprocDetrendWidget)
+                # END Preproc
                 
                 # BEGIN tab layouting
                 elementTabLayout = qt.QVBoxLayout()
@@ -458,8 +515,10 @@ class SumRulesWindow(qt.QMainWindow):
                 #elementTabLayout.addWidget(qt.QLabel('X-ray absorption edges'))
                 #elementTabLayout.addWidget(edge1Widget)
                 #elementTabLayout.addWidget(edge2Widget)
-                elementTabLayout.addWidget(sampleGB)
-                elementTabLayout.addWidget(absorptionGB)
+                #elementTabLayout.addWidget(sampleGB)
+                #elementTabLayout.addWidget(absorptionGB)
+                elementTabLayout.addWidget(topLine)
+                elementTabLayout.addWidget(preproc)
                 elementTabLayout.addWidget(qt.VerticalSpacer())
                 elementTabWidget = qt.QWidget()
                 elementTabWidget.setLayout(elementTabLayout)
@@ -522,6 +581,7 @@ class SumRulesWindow(qt.QMainWindow):
                 #edgeLayout.addWidget(addDelWidget)
                 for idx in range(numberOfEdges):
                     markerLabel = 'Edge %d'%(idx+1)
+                    self.edgeMarkerList += [markerLabel]
                     markerWidget, spinbox = self.addMarker(window=window,
                                                   label=markerLabel,
                                                   xpos=0.)
@@ -580,12 +640,21 @@ class SumRulesWindow(qt.QMainWindow):
                 fitControlGB.setLayout(fitControlLayout)
                 # END Fit control group box
                 
+                # Combine edge position and fit control in single line
+                sndLine = qt.QWidget()
+                sndLineLayout = qt.QHBoxLayout()
+                sndLineLayout.setContentsMargins(0,0,0,0)
+                sndLine.setLayout(sndLineLayout)
+                sndLineLayout.addWidget(edgeGB)
+                sndLineLayout.addWidget(fitControlGB)
+                
                 # Insert into tab
                 backgroundTabLayout = qt.QVBoxLayout()
                 backgroundTabLayout.setContentsMargins(0,0,0,0)
                 backgroundTabLayout.addWidget(prePostGB)
-                backgroundTabLayout.addWidget(edgeGB)    
-                backgroundTabLayout.addWidget(fitControlGB)    
+                #backgroundTabLayout.addWidget(edgeGB)    
+                #backgroundTabLayout.addWidget(fitControlGB)    
+                backgroundTabLayout.addWidget(sndLine)
                 backgroundTabLayout.addWidget(qt.VerticalSpacer())
                 backgroundWidget = qt.QWidget()
                 backgroundWidget.setLayout(backgroundTabLayout)
@@ -729,16 +798,26 @@ class SumRulesWindow(qt.QMainWindow):
         #self.setLayout(mainLayout)
         self.setCentralWidget(mainWidget)
         
-        
+        #
         # Data handling:
+        #
         # Each is Tuple (x,y)
         # type(x),type(y) == ndarray
-        self.xmcdData    = None
-        self.xasData     = None
-        self.xasDataCorr = None
-        self.xasDataBG   = None
+        self.xmcdData    = None # XMCD Spectrum
+        self.xasData     = None # XAS Spectrum
+        self.xasDataCorr = None # XAS minus Background model
+        self.xasDataBG   = None # XAS Backgrouns
+        # Integrated spectra: Notice that the shape
+        # diminished by one..
         self.xmcdInt     = None
         self.xasInt      = None
+        
+        #
+        # File (name) handling
+        #
+        self.dataInputFilename = None
+        self.confFilename      = None
+        self.baseFilename      = None
         
         tmpDict = {
                 'background' : {
@@ -764,13 +843,23 @@ class SumRulesWindow(qt.QMainWindow):
                     'edge2Transistion': 'L2M4'
                 }
         }
-#        for k0,v0 in self.valuesDict.items():
-#            print k0
-#            for k1, v1 in v0.items():
-#                print '\t'+k1
         
-        self.setValuesDict(tmpDict)
+        #self.setValuesDict(tmpDict)
         self._createMenuBar()
+
+    def triggerDetrend(self, state):
+        if (state == qt.Qt.Unchecked) or\
+           (state == qt.Qt.PartiallyChecked):
+            # Replot original data
+            return
+        pass
+        
+    def triggerNormalization(self, foo):
+        if (state == qt.Qt.Unchecked) or\
+           (state == qt.Qt.PartiallyChecked):
+            # Replot original data
+            return
+        pass
 
     def calcMagneticMoments(self):
         print 'calcMM -- current tab:', self.tabWidget.currentIndex()
@@ -839,69 +928,227 @@ class SumRulesWindow(qt.QMainWindow):
         #return res
         print 'getIntegralValues -- Result:', resList
 
-    def _createMenuBar(self):
-        # Always create actions before populating the MenuBar
-        self._createActions()
-        
+    def _createMenuBar(self):        
         # Creates empty menu bar, if none existed before
         menu = self.menuBar()
         menu.clear()
-        
-    
+
+        #
         # 'File' Menu
+        #
         file = menu.addMenu('&File')
+
+        openAction = qt.QAction('&Open Spec File', self)
+        openAction.setShortcut(qt.Qt.CTRL+qt.Qt.Key_O)
+        openAction.setStatusTip('Opened file')
+        openAction.setToolTip('Opens a data file (*.spec)')
+        openAction.triggered.connect(self.loadData)
+        
+        loadAction = qt.QAction('&Load Configuration', self)
+        loadAction.setShortcut(qt.Qt.CTRL+qt.Qt.Key_L)
+        loadAction.setStatusTip('Loaded analysis file')
+        loadAction.setToolTip('Loads an existing analysis file (*.sra)')
+        loadAction.triggered.connect(self.loadConfiguration)
+        
+        saveConfAction = qt.QAction('&Save Configuration', self)
+        saveConfAction.setShortcut(qt.Qt.CTRL+qt.Qt.Key_S)
+        saveConfAction.setStatusTip('Saved analysis file')
+        saveConfAction.setToolTip('Save analysis in file (*.sra)')
+        saveConfAction.triggered.connect(self.saveConfiguration)
+        
+        saveConfAsAction = qt.QAction('Save &Configuration as', self)
+        saveConfAsAction.setShortcut(qt.Qt.SHIFT+qt.Qt.CTRL+qt.Qt.Key_S)
+        saveConfAsAction.setStatusTip('Saved analysis file')
+        saveConfAsAction.setToolTip('Save analysis in file (*.sra)')
+        saveConfAsAction.triggered.connect(self.saveConfigurationAs)
+        
+        saveDataAction = qt.QAction('Save &Data', self)
+        saveDataAction.setShortcut(qt.Qt.CTRL+qt.Qt.Key_D)
+        saveDataAction.setStatusTip('Saved analysis file')
+        saveDataAction.setToolTip('Save analysis in file (*.sra)')
+        saveDataAction.triggered.connect(self.saveData)
+        
+        saveDataAsAction = qt.QAction('Save D&ata as', self)
+        saveDataAsAction.setShortcut(qt.Qt.SHIFT+qt.Qt.CTRL+qt.Qt.Key_D)
+        saveDataAsAction.setStatusTip('Saved analysis file')
+        saveDataAsAction.setToolTip('Save analysis in file (*.sra)')
+        saveDataAsAction.triggered.connect(self.saveDataAs)
+        
         # Populate the 'File' menu
-        file.addAction(self.openAction)
-        file.addAction(self.loadAction)
-        file.addAction(self.saveAction)
-        file.addSeparator()
+        for action in [openAction, 
+                       loadAction, 
+                       saveConfAction, 
+                       saveConfAsAction, 
+                       saveDataAction, 
+                       saveDataAsAction]:
+            file.addAction(action)
         file.addAction('E&xit', self.close)
-        
-    def _createActions(self):
-        self.openAction = qt.QAction('&Open', self)
-        self.openAction.setShortcut(qt.Qt.CTRL+qt.Qt.Key_O)
-        self.openAction.setStatusTip('Opened file')
-        self.openAction.setToolTip('Opens either a data file (*.spec)')
-        self.openAction.triggered.connect(self.loadData)
-        
-        self.loadAction = qt.QAction('&Load', self)
-        self.loadAction.setShortcut(qt.Qt.CTRL+qt.Qt.Key_L)
-        self.loadAction.setStatusTip('Loaded analysis file')
-        self.loadAction.setToolTip('Loads an existing analysis file (*.sra)')
-        self.loadAction.triggered.connect(self.loadConfiguration)
-        
-        self.saveAction = qt.QAction('&Save', self)
-        self.saveAction.setShortcut(qt.Qt.CTRL+qt.Qt.Key_S)
-        self.saveAction.setStatusTip('Saved analysis file')
-        self.saveAction.setToolTip('Save analysis in file (*.sra)')
-        self.saveAction.triggered.connect(self.saveConfiguration)
-        
+
     def loadData(self):
         # Hier gehts weiter:
         # 1. Lade beliebige spec Datei und ueberlasse es dem User auszuwaehlen,
         #    welche Spalten er auswaehlen moechte.
-        #    -> Erstelle Fensterklasse.. Was hat PyMCA zu bieten?
-        # 2. Nutze setRawData(x, y, identifier)
-        print 'loadData -- Here!'
+        dial = LoadDichorismDataDialog()
+        dial.setDirectory(PyMcaDirs.outputDir)
+        if dial.exec_():
+            print 'Open clicked'
+            dataDict = dial.dataDict
+        else:
+            print 'Cancel clicked'
+            return
+        # def setRawData(self, x, y, identifier):
+        x = dataDict['x']
+        xas = dataDict['xas']
+        xmcd = dataDict['xmcd']
+        self.dataInputFilename = dataDict['fn']
+        self.setRawData(x, xas, 'xas')
+        self.setRawData(x, xmcd, 'xmcd')
 
+    def saveDataAs(self):
+        self.baseFilename = None
+        self.__savedData  = False
+        self.saveData()
+
+    def saveData(self):
+        # Saves spectral data that is calculated during
+        # the evaluation process:
+        # 1. BG Modell
+        # 2. XAS-BG
+        # 3./4. XAS/XMCD integrals
+        # Integral data goes into separate file
+        dataList = [self.xasData,
+                    self.xasDataCorr,
+                    self.xasDataBG,
+                    self.xmcdInt,
+                    self.xasInt]
+        if None in dataList:
+            msg = qt.QMessageBox()
+            msg.setWindowTitle('Sum Rules Analysis Error')
+            msg.setIcon(qt.QMessageBox.Warning)
+            msg.setText('Analysis incomplete!\nCannot save generated data')
+            msg.exec_()
+            return False
+        
+        if self.__savedData and self.baseFilename:
+            pass
+        else:
+            ddict    = self.getValuesDict()
+            saveDir  = PyMcaDirs.outputDir
+            filter   = 'spec File (*.spec);;All files (*.*)'
+            selectedFilter = 'Sum Rules Analysis files (*.spec)'
+            
+            baseFilename = qt.QFileDialog.getSaveFileName(self,
+                                   'Save Sum Rule Analysis Data',
+                                   saveDir,
+                                   filter,
+                                   selectedFilter)
+            if len(baseFilename) == 0:
+                # Leave self.baseFilename as it is..
+                #self.baseFilename = None
+                return False
+            else:
+                self.baseFilename = str(baseFilename)
+            if self.baseFilename.endswith('.spec'):
+                # Append extension later
+                self.baseFilename.replace('.spec','')
+
+        # Create filenames
+        specFilename = self.baseFilename + '_specData.spec'
+        intFilename  = self.baseFilename + '_intData.spec'
+        
+        self.__savedData = False
+        
+        # Acquire filehandles
+        try:
+            specFilehandle = open(specFilename, 'wb')
+        except IOError:
+            msg = qt.QMessageBox()
+            msg.setWindowTitle('Sum Rules Analysis Error')
+            msg.setIcon(qt.QMessageBox.Warning)
+            msg.setText('Unable to open file \'%s\''%specFilename)
+            msg.exec_()
+            return False
+        try:
+            intFilehandle = open(intFilename, 'wb')
+        except IOError:
+            msg = qt.QMessageBox()
+            msg.setWindowTitle('Sum Rules Analysis Error')
+            msg.setIcon(qt.QMessageBox.Warning)
+            msg.setText('Unable to open file \'%s\''%intFilename)
+            msg.exec_()
+            return False
+
+        title   = 'Sum Rules Analysis on \'%s\''%self.dataInputFilename
+        header  = '#S %d %s'%(1,title) + NEWLINE
+        delim   = ' '
+
+        # 1. Background Modell, XAS, XAS-Background
+        # All share the same x-range
+        xSpec, yXas   = self.xasData
+        xSpec, yBG    = self.xasDataBG
+        xSpec, yXasBG = self.xasDataCorr
+        dataSpec = numpy.vstack((xSpec, yXas, yBG, yXasBG)).T
+        
+        # 2. Integrals
+        # Also share the same x-range
+        xInt, yXasInt  = self.xasInt
+        xInt, yXmcdInt = self.xmcdInt
+        xSpec, xasBG = self.xasDataCorr
+        dataInt = numpy.vstack((xInt, yXasInt, yXmcdInt)).T
+
+        outSpec  = header
+        outSpec += '#N %d'%4 + NEWLINE
+        outSpec += '#L x  XAS  BG  XAScorr' + NEWLINE
+        for line in dataSpec:
+            tmp = delim.join(['%f'%num for num in line])
+            outSpec += (tmp + NEWLINE)
+
+        outInt  = header
+        outInt += '#N %d'%3 + NEWLINE
+        outInt += '#L x  XAS Int  XMCD Int' + NEWLINE
+        for line in dataInt:
+            tmp = delim.join(['%f'%num for num in line])
+            outSpec += (tmp + NEWLINE)
+        
+        for (fh, output) in zip([specFilehandle, intFilehandle],
+                               [outSpec, outInt]):
+            fh.write(NEWLINE)
+            fh.write(output)
+            fh.write(NEWLINE)
+            fh.close()
+        
+        self.__savedData = True
+        return True        
+
+    def saveConfigurationAs(self, shortcut=False):
+        self.confFilename = None
+        self.__savedConf  = False
+        self.saveConfiguration()
+        
     def saveConfiguration(self):
         ddict    = self.getValuesDict()
-        saveDir  = PyMcaDirs.outputDir
-        filter   = 'Sum Rules Analysis files (*.sra);;All files (*.*)'
-        selectedFilter = 'Sum Rules Analysis files (*.sra)'
         
-        filename = qt.QFileDialog.getSaveFileName(self,
-                               'Save Sum Rule Analysis',
-                               saveDir,
-                               'Sum Rules Analysis files (*.sra);;All files (*.*)',
-                               'Sum Rules Analysis files (*.sra)')
-        if len(filename) == 0:
-            return
+        if self.__savedConf and self.confFilename:
+            filename = self.confFilename
         else:
-            filename = str(filename)
-        if not filename.endswith('.sra'):
-            filename += '.sra'
+            saveDir  = PyMcaDirs.outputDir
+            filter   = 'Sum Rules Analysis files (*.sra);;All files (*.*)'
+            selectedFilter = 'Sum Rules Analysis files (*.sra)'
             
+            filename = qt.QFileDialog.getSaveFileName(self,
+                                   'Save Sum Rule Analysis Configuration',
+                                   saveDir,
+                                   filter,
+                                   selectedFilter)
+            if len(filename) == 0:
+                return False
+            else:
+                filename = str(filename)
+            if not filename.endswith('.sra'):
+                filename += '.sra'
+            self.confFilename = filename
+
+        self.__savedConf = False
         confDict = ConfigDict.ConfigDict(self.getValuesDict())
         try:
             confDict.write(filename)
@@ -911,8 +1158,9 @@ class SumRulesWindow(qt.QMainWindow):
             msg.setIcon(qt.QMessageBox.Warning)
             msg.setText('Unable to write configuration to \'%s\''%filename)
             msg.exec_()
-            return
-        self.__saved = True
+            return False
+        self.__savedConf = True
+        return True
     
     def loadConfiguration(self):
         confDict = ConfigDict.ConfigDict()
@@ -922,7 +1170,7 @@ class SumRulesWindow(qt.QMainWindow):
         selectedFilter = 'Sum Rules Analysis files (*.sra)'
         
         filename = qt.QFileDialog.getOpenFileName(self,
-                               'Load Sum Rule Analysis',
+                               'Load Sum Rule Analysis Configuration',
                                loadDir,
                                filter,
                                selectedFilter)
@@ -952,11 +1200,11 @@ class SumRulesWindow(qt.QMainWindow):
                 msg.setIcon(qt.QMessageBox.Warning)
                 msg.setText('Malformed configuration file \'%s\''%filename)
             return
-        self.__saved = True
+        self.__savedConf = True
         
 
     def close(self):
-        if not self.__saved:
+        if not self.__savedConf:
             msg = qt.QMessageBox()
             msg.setWindowTitle('Sum Rules Tool')
             msg.setIcon(qt.QMessageBox.Warning)
@@ -1205,6 +1453,7 @@ class SumRulesWindow(qt.QMainWindow):
         idxPre  = numpy.nonzero((preMin <= x) & (x <= preMax))[0]
         idxPost = numpy.nonzero((postMin <= x) & (x <= postMax))[0]
         
+        # TODO: Error handling
         xPreMax  = x[idxPre.max()]
         xPostMin = x[idxPost.min()]
         gap = abs(xPreMax - xPostMin)
@@ -1359,11 +1608,39 @@ class SumRulesWindow(qt.QMainWindow):
         tab = self.tabList[idx]
         print 'Tab changed -- idx:',idx,'tab:',tab
         self.plotOnDemand(window=tab)
-        if tab == self.__tabInt:
-            for marker in self.xmcdMarkerList:
-                sb = self.valuesDict[self.__tabInt][marker]
-                print sb.getIntersections()
-                #self.getIntegralValues()
+        markerList = self.xasMarkerList\
+                   + self.edgeMarkerList\
+                   + self.xmcdMarkerList
+        # Hide/Show markers depending on the selected tab
+        # Problem: MarkerLabels are stored in markerList,
+        # however the MarkerSpinBoxes are stores in
+        # self.valuesDict ...
+        # edgeMarkers & xasMarkers -> BACKGROUND  tab
+        # xmcdMarker               -> INTEGRATION tab
+        if tab == self.__tabBG:
+            for marker in markerList:
+                if (marker in self.xasMarkerList) or\
+                   (marker in self.edgeMarkerList):
+                    sb = self.valuesDict[self.__tabBG][marker]
+                    sb.showMarker()
+                else:
+                    sb = self.valuesDict[self.__tabInt][marker]
+                    sb.hideMarker()
+        elif tab == self.__tabInt:
+            for marker in markerList:
+                if marker in self.xmcdMarkerList:
+                    sb = self.valuesDict[self.__tabInt][marker]
+                    sb.showMarker()
+                else:
+                    sb = self.valuesDict[self.__tabBG][marker]
+                    sb.hideMarker()
+        else: # tab == self.__tabElement:
+            for marker in markerList:
+                if marker in self.xmcdMarkerList:
+                    sb = self.valuesDict[self.__tabInt][marker]
+                else:
+                    sb = self.valuesDict[self.__tabBG][marker]
+                sb.showMarker()
         self.tabChangedSignal.emit(tab)
     
     def keyPressEvent(self, event):
@@ -1395,7 +1672,6 @@ def getData(fn='/home/truter/lab/datasets/sum_rules/Fe_L23/xld_analysis.spec'):
     xasArr  = spec[4][:]
     return x, avgA, avgB, xmcdArr, xasArr
 
-#class LoadDichorismDataDialog(qt.QDialog):
 class LoadDichorismDataDialog(qt.QFileDialog):
     
     dataInputSignal = qt.pyqtSignal(object)
@@ -1403,7 +1679,10 @@ class LoadDichorismDataDialog(qt.QFileDialog):
     def __init__(self, parent=None):
         #qt.QDialog.__init__(self, parent)
         qt.QFileDialog.__init__(self, parent)
+        self.dataDict = {}
+        self.validated = False
         
+        self.setWindowTitle('Load Dichorism Data')
         self.setFilter('Spec Files (*.spec);;'
                       +'All Files (*.*)')
         
@@ -1431,7 +1710,7 @@ class LoadDichorismDataDialog(qt.QFileDialog):
         # the last two:
         # 'y'   -> 'XAS'
         # 'mon' -> 'XMCD'
-        labels = ['Label', 'X', 'XAS', 'XMCD']
+        labels = ['Counter', 'X', 'XAS', 'XMCD']
         table  = self.specFileWidget.cntTable
         for idx in range(len(labels)):
             item = table.horizontalHeaderItem(idx)
@@ -1459,20 +1738,30 @@ class LoadDichorismDataDialog(qt.QFileDialog):
         # Signals
         #
         self.currentChanged.connect(self.setDataSource)
-        self.fileSelected.connect(self.processSelectedFile)
     
     def setDataSource(self, filename):
+        # Opens a spec file and allows to browse its
+        # contents in the top right widget
         filename = str(filename)
         if osPathIsDir(filename) or (not filename.endswith('.spec')):
             return
         src = SpecFileDataSource.SpecFileDataSource(filename)
         self.specFileWidget.setDataSource(src)
-        # TODO: Check if counters are present that start with XMCD
-        #table  = self.specFileWidget.cntTable
-        #table.cellWidget(...)
     
+    def accept(self):
+        llist = self.selectedFiles()
+        if len(llist) == 1:
+            filename = str(llist[0])
+        else:
+            return
+        self.processSelectedFile(filename)
+        if self.validated:
+            qt.QDialog.accept(self)
+        
     def processSelectedFile(self, filename):
+        self.dataDict = {}
         filename = str(filename)
+            
         if (not filename.endswith('.spec')):
             return
             
@@ -1481,16 +1770,14 @@ class LoadDichorismDataDialog(qt.QFileDialog):
             self.errorMessageBox('No scan selected!')
             return
         else:
-            scan = scanList[0]
+            scan   = scanList[0]
             scanNo = str(scan.text(1))
-        print 'scanNo =',scanNo
             
         table = self.specFileWidget.cntTable
         # ddict['x'] -> 'X'
         # ddict['y'] -> 'XAS'
         # ddict['m'] -> 'XMCD'
         ddict   = table.getCounterSelection()
-        print ddict
         colX    = ddict['x']
         colXas  = ddict['y']
         colXmcd = ddict['m']
@@ -1512,17 +1799,29 @@ class LoadDichorismDataDialog(qt.QFileDialog):
             return
         else:
             colXmcd = colXmcd[0]
+            
+        if colXas == colX:
+            self.errorMessageBox('X and XAS use the same counter')
+            return
+        elif colX == colXmcd:
+            self.errorMessageBox('X and XMCD use the same counter')
+            return
+        elif colXmcd == colXas:
+            self.errorMessageBox('XAS and XMCD use the same counter')
+            return
+            
         # Extract data
         dataObj = self.specFileWidget.data.getDataObject(scanNo)
-        data    = dataObj.data
         # data has format (rows, cols) -> (steps, counters)
-        out = {}
-        out['x']    = data[:, colX]
-        out['xas']  = data[:, colXas]
-        out['xmcd'] = data[:, colXmcd]
+        self.dataDict['fn']   = filename
+        self.dataDict['x']    = dataObj.data[:, colX]
+        self.dataDict['xas']  = dataObj.data[:, colXas]
+        self.dataDict['xmcd'] = dataObj.data[:, colXmcd]
         
-        self.dataInputSignal.emit(out)
-        self.destroy()
+        self.validated = True
+        self.dataInputSignal.emit(self.dataDict)
+        #self.destroy() ?
+        #self.close()
         
     def errorMessageBox(self, msg):
         box = qt.QMessageBox()
@@ -1539,9 +1838,9 @@ if __name__ == '__main__':
     win = SumRulesWindow()
     x, avgA, avgB, xmcd, xas = getData()
     #win.plotWindow.newCurve(x,xmcd, legend='xmcd', xlabel='ene_st', ylabel='zratio', info={}, replot=False, replace=False)
-    win.setRawData(x,xmcd, identifier='xmcd')
+    #win.setRawData(x,xmcd, identifier='xmcd')
     #win.plotWindow.newCurve(x,xas, legend='xas', xlabel='ene_st', ylabel='zratio', info={}, replot=False, replace=False)
-    win.setRawData(x,xas, identifier='xas')
-    win = LoadDichorismDataDialog()
+    #win.setRawData(x,xas, identifier='xas')
+    #win = LoadDichorismDataDialog()
     win.show()
     app.exec_()
